@@ -63,6 +63,7 @@ const InstructionOperand = union(enum) {
     direct_address: DirectAddress,
     effective_address: EffectiveAddress,
     immediate: ImmediateValue,
+    jump: i8,
 };
 
 const InstructionType = enum {
@@ -86,6 +87,22 @@ const InstructionType = enum {
     sub,
     xor,
     cmp,
+    jo,
+    jno,
+    jb,
+    jnb,
+    je,
+    jne,
+    jbe,
+    jnbe,
+    js,
+    jns,
+    jp,
+    jnp,
+    jl,
+    jnl,
+    jle,
+    jnle,
 };
 
 const Instruction = struct {
@@ -124,6 +141,22 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .sub => "sub",
         .xor => "xor",
         .cmp => "cmp",
+        .jo => "jo",
+        .jno => "jno",
+        .jb => "jb",
+        .jnb => "jnb",
+        .je => "je",
+        .jne => "jne",
+        .jbe => "jbe",
+        .jnbe => "jnbe",
+        .js => "js",
+        .jns => "jns",
+        .jp => "jp",
+        .jnp => "jnp",
+        .jl => "jl",
+        .jnl => "jnl",
+        .jle => "jle",
+        .jnle => "jnle",
     };
 }
 
@@ -191,6 +224,9 @@ fn printOperand(operand: InstructionOperand, writer: anytype) !void {
                 widthMnemonic(immediate.width),
                 immediate.value,
             });
+        },
+        .jump => |jump| {
+            try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2});
         },
     }
 }
@@ -580,6 +616,19 @@ fn decodeOpRmExtended(width: OperandWidth, byte_stream: []const u8) !Instruction
     };
 }
 
+fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    return Instruction{
+        .length = 2,
+        .type = instruction_type,
+        .dst = .{ .jump = @bitCast(i8, byte_stream[1]) },
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -641,6 +690,23 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
         0x3c => decodeAccImmediate(.cmp, .byte, byte_stream),
         0x3d => decodeAccImmediate(.cmp, .word, byte_stream),
+
+        0x70 => decodeShortLabelJump(.jo, byte_stream),
+        0x71 => decodeShortLabelJump(.jno, byte_stream),
+        0x72 => decodeShortLabelJump(.jb, byte_stream),
+        0x73 => decodeShortLabelJump(.jnb, byte_stream),
+        0x74 => decodeShortLabelJump(.je, byte_stream),
+        0x75 => decodeShortLabelJump(.jne, byte_stream),
+        0x76 => decodeShortLabelJump(.jbe, byte_stream),
+        0x77 => decodeShortLabelJump(.jnbe, byte_stream),
+        0x78 => decodeShortLabelJump(.js, byte_stream),
+        0x79 => decodeShortLabelJump(.jns, byte_stream),
+        0x7a => decodeShortLabelJump(.jp, byte_stream),
+        0x7b => decodeShortLabelJump(.jnp, byte_stream),
+        0x7c => decodeShortLabelJump(.jl, byte_stream),
+        0x7d => decodeShortLabelJump(.jnl, byte_stream),
+        0x7e => decodeShortLabelJump(.jle, byte_stream),
+        0x7f => decodeShortLabelJump(.jnle, byte_stream),
 
         0x80 => decodeOpRmImmediate(.byte, byte_stream),
         0x81 => decodeOpRmImmediate(.word, byte_stream),
