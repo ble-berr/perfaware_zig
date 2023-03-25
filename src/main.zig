@@ -212,7 +212,7 @@ fn extend8(byte: u8) u16 {
     }
 }
 
-fn get_mod_operand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8) !ModOperand {
+fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8) !ModOperand {
     switch (mod_byte.mod) {
         0 => switch (mod_byte.b) {
             6 => {
@@ -277,7 +277,7 @@ fn get_mod_operand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const 
     }
 }
 
-fn decode_r_rm(
+fn decodeRegisterRM(
     instruction_type: InstructionType,
     direction: enum { to_rm, from_rm },
     width: OperandWidth,
@@ -286,8 +286,8 @@ fn decode_r_rm(
     var instruction = Instruction{
         .length = 2,
         .type = instruction_type,
-        .src = undefined,
         .dst = undefined,
+        .src = undefined,
     };
 
     if (byte_stream.len < instruction.length) {
@@ -295,7 +295,7 @@ fn decode_r_rm(
     }
 
     const mod_byte = parse_mod_byte(byte_stream[1]);
-    const mod_operand = try get_mod_operand(mod_byte, width, byte_stream[2..]);
+    const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
 
     instruction.length += mod_operand.length;
 
@@ -319,10 +319,10 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
     }
 
     return switch (byte_stream[0]) {
-        0x88 => decode_r_rm(.mov, .to_rm, .byte, byte_stream),
-        0x89 => decode_r_rm(.mov, .to_rm, .word, byte_stream),
-        0x8a => decode_r_rm(.mov, .from_rm, .byte, byte_stream),
-        0x8b => decode_r_rm(.mov, .from_rm, .word, byte_stream),
+        0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
+        0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
+        0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
+        0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
 
         0xa4 => Instruction{ .length = 1, .type = .movsb, .dst = null, .src = null },
         0xa5 => Instruction{ .length = 1, .type = .movsw, .dst = null, .src = null },
