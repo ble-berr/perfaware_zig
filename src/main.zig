@@ -2,6 +2,16 @@ const std = @import("std");
 
 const InstructionType = enum {
     hlt,
+    movsb,
+    cmpsb,
+    stosb,
+    lodsb,
+    scasb,
+    movsw,
+    cmpsw,
+    stosw,
+    lodsw,
+    scasw,
 };
 
 const Instruction = struct {
@@ -13,6 +23,16 @@ const Instruction = struct {
 fn instructionMnemonic(instruction_type: InstructionType) []const u8 {
     return switch (instruction_type) {
         .hlt => "hlt",
+        .movsb => "movsb",
+        .cmpsb => "cmpsb",
+        .stosb => "stosb",
+        .lodsb => "lodsb",
+        .scasb => "scasb",
+        .movsw => "movsw",
+        .cmpsw => "cmpsw",
+        .stosw => "stosw",
+        .lodsw => "lodsw",
+        .scasw => "scasw",
     };
 }
 
@@ -25,6 +45,18 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         return error.IncompleteProgram;
     }
     switch (byte_stream[0]) {
+        0xa4 => return Instruction{ .length = 1, .type = .movsb },
+        0xa5 => return Instruction{ .length = 1, .type = .movsw },
+        0xa6 => return Instruction{ .length = 1, .type = .cmpsb },
+        0xa7 => return Instruction{ .length = 1, .type = .cmpsw },
+
+        0xaa => return Instruction{ .length = 1, .type = .stosb },
+        0xab => return Instruction{ .length = 1, .type = .stosw },
+        0xac => return Instruction{ .length = 1, .type = .lodsb },
+        0xad => return Instruction{ .length = 1, .type = .lodsw },
+        0xae => return Instruction{ .length = 1, .type = .scasb },
+        0xaf => return Instruction{ .length = 1, .type = .scasw },
+
         0xf4 => return Instruction{ .length = 1, .type = .hlt },
         else => return error.IllegalInstruction,
     }
