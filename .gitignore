@@ -1,0 +1,6 @@
+# Ignore Zig build artifacts
+zig-cache
+zig-out
+
+# Ignore test dir
+tests

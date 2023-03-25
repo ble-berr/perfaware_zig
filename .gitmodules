@@ -1,0 +1,3 @@
+[submodule "course_material"]
+	path = course_material
+	url = https://github.com/cmuratori/computer_enhance
