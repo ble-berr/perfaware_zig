@@ -199,7 +199,7 @@ const ModByte = struct {
     b: u3,
 };
 
-fn parse_mod_byte(mod_byte: u8) ModByte {
+fn parseModByte(mod_byte: u8) ModByte {
     return .{
         .mod = @intCast(u2, (mod_byte & 0o300) >> 6),
         .a = @intCast(u3, (mod_byte & 0o070) >> 3),
@@ -306,7 +306,7 @@ fn decodeRegisterRM(
         return Error.IncompleteProgram;
     }
 
-    const mod_byte = parse_mod_byte(byte_stream[1]);
+    const mod_byte = parseModByte(byte_stream[1]);
     const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
 
     instruction.length += mod_operand.length;
