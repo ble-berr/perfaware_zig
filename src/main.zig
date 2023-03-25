@@ -11,7 +11,7 @@ const Instruction = struct {
 
 fn print_instruction(instruction: Instruction, writer: anytype) !void {
     switch (instruction.type) {
-        .hlt => try writer.writeAll("hlt\n"),
+        .hlt => try writer.writeAll("hlt"),
     }
 }
 
@@ -51,7 +51,14 @@ fn decode_program(reader: anytype, writer: anytype) !void {
             std.debug.print("{s}: 0x{x}\n", .{ @errorName(err), stream_buf[stream_pos] });
             return err;
         };
+
         try print_instruction(instruction, writer);
+        try writer.writeAll(" ;");
+        for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
+            try std.fmt.format(writer, " 0x{x}", .{byte});
+        }
+        try writer.writeAll("\n");
+
         stream_pos += instruction.length;
     }
 }
