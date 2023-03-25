@@ -551,6 +551,35 @@ fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instructio
     };
 }
 
+fn decodeOpRmExtended(width: OperandWidth, byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 3) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
+    const immediate_value = switch (width) {
+        .byte => @as(u16, byte_stream[2 + mod_operand.length]),
+        .word => extend8(byte_stream[2 + mod_operand.length]),
+    };
+
+    return Instruction{
+        .length = 3 + mod_operand.length,
+        .type = switch (mod_byte.a) {
+            0 => .add,
+            1 => .@"or",
+            2 => .adc,
+            3 => .sbb,
+            4 => .@"and",
+            5 => .sub,
+            6 => .xor,
+            7 => .cmp,
+        },
+        .dst = mod_operand.operand,
+        .src = .{ .immediate = .{ .value = immediate_value, .width = width } },
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -615,6 +644,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0x80 => decodeOpRmImmediate(.byte, byte_stream),
         0x81 => decodeOpRmImmediate(.word, byte_stream),
+
+        0x82 => decodeOpRmExtended(.byte, byte_stream), // Duplicates 0x80?
+        0x83 => decodeOpRmExtended(.word, byte_stream),
 
         0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
