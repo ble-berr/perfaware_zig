@@ -49,7 +49,7 @@ done
 # are prefixed with "listing_".
 for file in course_material/perfaware/part1/listing_* ; do
 	case "$file" in
-		*.asm)
+		*.asm|*.txt)
 			continue
 			;;
 		*)
