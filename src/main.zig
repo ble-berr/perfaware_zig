@@ -9,10 +9,15 @@ const Instruction = struct {
     type: InstructionType,
 };
 
+// TODO(benjamin): some comptime magic to generate this
+fn instructionMnemonic(instruction_type: InstructionType) []const u8 {
+    return switch (instruction_type) {
+        .hlt => "hlt",
+    };
+}
+
 fn printInstruction(instruction: Instruction, writer: anytype) !void {
-    switch (instruction.type) {
-        .hlt => try writer.writeAll("hlt"),
-    }
+    try writer.writeAll(instructionMnemonic(instruction.type));
 }
 
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
