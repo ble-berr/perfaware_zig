@@ -421,6 +421,47 @@ fn decodeMemImmediate(
     return instruction;
 }
 
+fn decodeMovAccMem(
+    comptime direction: enum { to_acc, from_acc },
+    width: OperandWidth,
+    byte_stream: []const u8,
+) !Instruction {
+    if (byte_stream.len < 3) {
+        return Error.IncompleteProgram;
+    }
+
+    var instruction = Instruction{
+        .length = 3,
+        .type = .mov,
+        .src = undefined,
+        .dst = undefined,
+    };
+    const direct_address = DirectAddress{ .address = make16(byte_stream[1], byte_stream[2]), .width = width };
+
+    switch (direction) {
+        .to_acc => {
+            instruction.dst = .{
+                .register = switch (width) {
+                    .byte => .al,
+                    .word => .ax,
+                },
+            };
+            instruction.src = .{ .direct_address = direct_address };
+        },
+        .from_acc => {
+            instruction.dst = .{ .direct_address = direct_address };
+            instruction.src = .{
+                .register = switch (width) {
+                    .byte => .al,
+                    .word => .ax,
+                },
+            };
+        },
+    }
+
+    return instruction;
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -431,6 +472,11 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
         0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
         0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
+
+        0xa0 => decodeMovAccMem(.to_acc, .byte, byte_stream),
+        0xa1 => decodeMovAccMem(.to_acc, .word, byte_stream),
+        0xa2 => decodeMovAccMem(.from_acc, .byte, byte_stream),
+        0xa3 => decodeMovAccMem(.from_acc, .word, byte_stream),
 
         0xa4 => Instruction{ .length = 1, .type = .movsb, .dst = null, .src = null },
         0xa5 => Instruction{ .length = 1, .type = .movsw, .dst = null, .src = null },
