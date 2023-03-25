@@ -249,7 +249,7 @@ fn get_mod_operand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const 
                 .operand = .{
                     .effective_address = .{
                         .base = @intToEnum(EacBase, mod_byte.b),
-                        .offset = extend8(byte_stream[1]),
+                        .offset = extend8(byte_stream[0]),
                         .width = width,
                     },
                 },
