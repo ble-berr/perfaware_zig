@@ -53,10 +53,16 @@ const DirectAddress = struct {
     width: OperandWidth,
 };
 
+const ImmediateValue = struct {
+    value: u16,
+    width: OperandWidth,
+};
+
 const InstructionOperand = union(enum) {
     register: Register,
     direct_address: DirectAddress,
     effective_address: EffectiveAddress,
+    immediate: ImmediateValue,
 };
 
 const InstructionType = enum {
@@ -161,7 +167,13 @@ fn printOperand(operand: InstructionOperand, writer: anytype) !void {
             try std.fmt.format(writer, "{s} [{s} {d:1}]", .{
                 widthMnemonic(ea.width),
                 eacBaseMnemonic(ea.base),
-                ea.offset,
+                @bitCast(i16, ea.offset),
+            });
+        },
+        .immediate => |immediate| {
+            try std.fmt.format(writer, "{s} {d}", .{
+                widthMnemonic(immediate.width),
+                immediate.value,
             });
         },
     }
@@ -313,6 +325,40 @@ fn decodeRegisterRM(
     return instruction;
 }
 
+fn decodeRegisterImmediate(
+    instruction_type: InstructionType,
+    width: OperandWidth,
+    byte_stream: []const u8,
+) !Instruction {
+    var instruction = Instruction{
+        .length = switch (width) {
+            .byte => 2,
+            .word => 3,
+        },
+        .type = instruction_type,
+        .dst = undefined,
+        .src = undefined,
+    };
+
+    if (byte_stream.len < instruction.length) {
+        return Error.IncompleteProgram;
+    }
+
+    instruction.dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) };
+
+    instruction.src = .{
+        .immediate = .{
+            .value = switch (width) {
+                .byte => byte_stream[1],
+                .word => make16(byte_stream[1], byte_stream[2]),
+            },
+            .width = width,
+        },
+    };
+
+    return instruction;
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -335,6 +381,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xad => Instruction{ .length = 1, .type = .lodsw, .dst = null, .src = null },
         0xae => Instruction{ .length = 1, .type = .scasb, .dst = null, .src = null },
         0xaf => Instruction{ .length = 1, .type = .scasw, .dst = null, .src = null },
+
+        0xb0...0xb7 => decodeRegisterImmediate(.mov, .byte, byte_stream),
+        0xb8...0xbf => decodeRegisterImmediate(.mov, .word, byte_stream),
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
