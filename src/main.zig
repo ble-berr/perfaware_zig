@@ -535,7 +535,7 @@ fn decodeAccImmediate(
                 .type = instruction_type,
                 .dst = .{ .register = .al },
                 .src = .{ .immediate = .{
-                    .value = byte_stream[0],
+                    .value = byte_stream[1],
                     .width = .byte,
                 } },
             };
@@ -550,7 +550,7 @@ fn decodeAccImmediate(
                 .type = instruction_type,
                 .dst = .{ .register = .ax },
                 .src = .{ .immediate = .{
-                    .value = make16(byte_stream[0], byte_stream[1]),
+                    .value = make16(byte_stream[1], byte_stream[2]),
                     .width = .word,
                 } },
             };
