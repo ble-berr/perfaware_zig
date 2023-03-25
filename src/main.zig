@@ -449,8 +449,8 @@ fn decodeMovAccMem(
     var instruction = Instruction{
         .length = 3,
         .type = .mov,
-        .src = undefined,
         .dst = undefined,
+        .src = undefined,
     };
     const direct_address = DirectAddress{ .address = make16(byte_stream[1], byte_stream[2]), .width = width };
 
