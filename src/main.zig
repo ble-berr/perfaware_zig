@@ -103,6 +103,10 @@ const InstructionType = enum {
     jnl,
     jle,
     jnle,
+    loopne,
+    loope,
+    loop,
+    jcxz,
 };
 
 const Instruction = struct {
@@ -157,6 +161,10 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .jnl => "jnl",
         .jle => "jle",
         .jnle => "jnle",
+        .loopne => "loopne",
+        .loope => "loope",
+        .loop => "loop",
+        .jcxz => "jcxz",
     };
 }
 
@@ -741,6 +749,11 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
+
+        0xe0 => decodeShortLabelJump(.loopne, byte_stream),
+        0xe1 => decodeShortLabelJump(.loope, byte_stream),
+        0xe2 => decodeShortLabelJump(.loop, byte_stream),
+        0xe3 => decodeShortLabelJump(.jcxz, byte_stream),
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
