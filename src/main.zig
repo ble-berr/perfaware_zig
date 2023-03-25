@@ -9,13 +9,13 @@ const Instruction = struct {
     type: InstructionType,
 };
 
-fn print_instruction(instruction: Instruction, writer: anytype) !void {
+fn printInstruction(instruction: Instruction, writer: anytype) !void {
     switch (instruction.type) {
         .hlt => try writer.writeAll("hlt"),
     }
 }
 
-fn decode_instruction(byte_stream: []const u8) !Instruction {
+fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return error.IncompleteProgram;
     }
@@ -26,7 +26,7 @@ fn decode_instruction(byte_stream: []const u8) !Instruction {
     return 0;
 }
 
-fn decode_program(reader: anytype, writer: anytype) !void {
+fn decodeProgram(reader: anytype, writer: anytype) !void {
     var stream_buf: [512]u8 = undefined;
 
     var stream_len: usize = try reader.read(stream_buf[0..]);
@@ -47,12 +47,12 @@ fn decode_program(reader: anytype, writer: anytype) !void {
                 stream_pos = 0;
             }
         }
-        const instruction = decode_instruction(stream_buf[stream_pos..stream_len]) catch |err| {
+        const instruction = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
             std.debug.print("{s}: 0x{x}\n", .{ @errorName(err), stream_buf[stream_pos] });
             return err;
         };
 
-        try print_instruction(instruction, writer);
+        try printInstruction(instruction, writer);
         try writer.writeAll(" ;");
         for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
             try std.fmt.format(writer, " 0x{x}", .{byte});
@@ -67,5 +67,5 @@ pub fn main() !void {
     var stdout = std.io.getStdOut().writer();
     var stdin = std.io.getStdIn().reader();
 
-    try decode_program(stdin, stdout);
+    try decodeProgram(stdin, stdout);
 }
