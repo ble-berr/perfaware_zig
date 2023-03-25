@@ -478,6 +478,44 @@ fn decodeMovAccMem(
     return instruction;
 }
 
+fn decodeAccImmediate(
+    instruction_type: InstructionType,
+    width: OperandWidth,
+    byte_stream: []const u8,
+) !Instruction {
+    switch (width) {
+        .byte => {
+            if (byte_stream.len < 2) {
+                return Error.IncompleteProgram;
+            }
+            return Instruction{
+                .length = 2,
+                .type = instruction_type,
+                .dst = .{ .register = .al },
+                .src = .{ .immediate = .{
+                    .value = byte_stream[0],
+                    .width = .byte,
+                } },
+            };
+        },
+        .word => {
+            if (byte_stream.len < 3) {
+                return Error.IncompleteProgram;
+            }
+
+            return Instruction{
+                .length = 3,
+                .type = instruction_type,
+                .dst = .{ .register = .ax },
+                .src = .{ .immediate = .{
+                    .value = make16(byte_stream[0], byte_stream[1]),
+                    .width = .word,
+                } },
+            };
+        },
+    }
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -488,41 +526,57 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x01 => decodeRegisterRM(.add, .to_rm, .word, byte_stream),
         0x02 => decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
         0x03 => decodeRegisterRM(.add, .from_rm, .word, byte_stream),
+        0x04 => decodeAccImmediate(.add, .byte, byte_stream),
+        0x05 => decodeAccImmediate(.add, .word, byte_stream),
 
         0x08 => decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
         0x09 => decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
         0x0a => decodeRegisterRM(.@"or", .from_rm, .byte, byte_stream),
         0x0b => decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
+        0x0c => decodeAccImmediate(.@"or", .byte, byte_stream),
+        0x0d => decodeAccImmediate(.@"or", .word, byte_stream),
 
         0x10 => decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
         0x11 => decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
         0x12 => decodeRegisterRM(.adc, .from_rm, .byte, byte_stream),
         0x13 => decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
+        0x14 => decodeAccImmediate(.adc, .byte, byte_stream),
+        0x15 => decodeAccImmediate(.adc, .word, byte_stream),
 
         0x18 => decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
         0x19 => decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
         0x1a => decodeRegisterRM(.sbb, .from_rm, .byte, byte_stream),
         0x1b => decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
+        0x1c => decodeAccImmediate(.sbb, .byte, byte_stream),
+        0x1d => decodeAccImmediate(.sbb, .word, byte_stream),
 
         0x20 => decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
         0x21 => decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
         0x22 => decodeRegisterRM(.@"and", .from_rm, .byte, byte_stream),
         0x23 => decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
+        0x24 => decodeAccImmediate(.@"and", .byte, byte_stream),
+        0x25 => decodeAccImmediate(.@"and", .word, byte_stream),
 
         0x28 => decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
         0x29 => decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
         0x2a => decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
         0x2b => decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
+        0x2c => decodeAccImmediate(.sub, .byte, byte_stream),
+        0x2d => decodeAccImmediate(.sub, .word, byte_stream),
 
         0x30 => decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
         0x31 => decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
         0x32 => decodeRegisterRM(.xor, .from_rm, .byte, byte_stream),
         0x33 => decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
+        0x34 => decodeAccImmediate(.xor, .byte, byte_stream),
+        0x35 => decodeAccImmediate(.xor, .word, byte_stream),
 
         0x38 => decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
         0x39 => decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
         0x3a => decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
         0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
+        0x3c => decodeAccImmediate(.cmp, .byte, byte_stream),
+        0x3d => decodeAccImmediate(.cmp, .word, byte_stream),
 
         0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
