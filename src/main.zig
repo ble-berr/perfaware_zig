@@ -289,6 +289,34 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
     }
 }
 
+const ImmediateValueDecode = struct {
+    length: u16,
+    value: u16,
+};
+
+fn getImmediateValue(
+    width: OperandWidth,
+    byte_stream: []const u8,
+) !ImmediateValueDecode {
+    switch (width) {
+        .byte => {
+            if (byte_stream.len < 1) {
+                return Error.IncompleteProgram;
+            }
+            return ImmediateValueDecode{ .length = 1, .value = byte_stream[0] };
+        },
+        .word => {
+            if (byte_stream.len < 2) {
+                return Error.IncompleteProgram;
+            }
+            return ImmediateValueDecode{
+                .length = 2,
+                .value = make16(byte_stream[0], byte_stream[1]),
+            };
+        },
+    }
+}
+
 fn decodeRegisterRM(
     instruction_type: InstructionType,
     direction: enum { to_rm, from_rm },
@@ -359,6 +387,40 @@ fn decodeRegisterImmediate(
     return instruction;
 }
 
+fn decodeMemImmediate(
+    instruction_type: InstructionType,
+    width: OperandWidth,
+    byte_stream: []const u8,
+) !Instruction {
+    var instruction = Instruction{
+        .length = 2,
+        .type = instruction_type,
+        .dst = undefined,
+        .src = undefined,
+    };
+
+    if (byte_stream.len < instruction.length) {
+        return Error.IncompleteProgram;
+    }
+
+    {
+        const mod_byte = parseModByte(byte_stream[1]);
+        var mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
+
+        instruction.length += mod_operand.length;
+        instruction.dst = mod_operand.operand;
+    }
+
+    {
+        const immediate = try getImmediateValue(width, byte_stream[instruction.length..]);
+
+        instruction.length += immediate.length;
+        instruction.src = .{ .immediate = .{ .value = immediate.value, .width = width } };
+    }
+
+    return instruction;
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -384,6 +446,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0xb0...0xb7 => decodeRegisterImmediate(.mov, .byte, byte_stream),
         0xb8...0xbf => decodeRegisterImmediate(.mov, .word, byte_stream),
+
+        0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
+        0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
