@@ -78,6 +78,14 @@ const InstructionType = enum {
     lodsw,
     scasw,
     mov,
+    add,
+    @"or",
+    adc,
+    sbb,
+    @"and",
+    sub,
+    xor,
+    cmp,
 };
 
 const Instruction = struct {
@@ -108,6 +116,14 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .lodsw => "lodsw",
         .scasw => "scasw",
         .mov => "mov",
+        .add => "add",
+        .@"or" => "or",
+        .adc => "adc",
+        .sbb => "sbb",
+        .@"and" => "and",
+        .sub => "sub",
+        .xor => "xor",
+        .cmp => "cmp",
     };
 }
 
@@ -468,6 +484,46 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
     }
 
     return switch (byte_stream[0]) {
+        0x00 => decodeRegisterRM(.add, .to_rm, .byte, byte_stream),
+        0x01 => decodeRegisterRM(.add, .to_rm, .word, byte_stream),
+        0x02 => decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
+        0x03 => decodeRegisterRM(.add, .from_rm, .word, byte_stream),
+
+        0x08 => decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
+        0x09 => decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
+        0x0a => decodeRegisterRM(.@"or", .from_rm, .byte, byte_stream),
+        0x0b => decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
+
+        0x10 => decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
+        0x11 => decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
+        0x12 => decodeRegisterRM(.adc, .from_rm, .byte, byte_stream),
+        0x13 => decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
+
+        0x18 => decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
+        0x19 => decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
+        0x1a => decodeRegisterRM(.sbb, .from_rm, .byte, byte_stream),
+        0x1b => decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
+
+        0x20 => decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
+        0x21 => decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
+        0x22 => decodeRegisterRM(.@"and", .from_rm, .byte, byte_stream),
+        0x23 => decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
+
+        0x28 => decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
+        0x29 => decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
+        0x2a => decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
+        0x2b => decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
+
+        0x30 => decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
+        0x31 => decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
+        0x32 => decodeRegisterRM(.xor, .from_rm, .byte, byte_stream),
+        0x33 => decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
+
+        0x38 => decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
+        0x39 => decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
+        0x3a => decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
+        0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
+
         0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
         0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
