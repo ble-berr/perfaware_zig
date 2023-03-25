@@ -306,11 +306,11 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
 }
 
 const ImmediateValueDecode = struct {
+    operand: ImmediateValue,
     length: u16,
-    value: u16,
 };
 
-fn getImmediateValue(
+fn getImmediateOperand(
     width: OperandWidth,
     byte_stream: []const u8,
 ) !ImmediateValueDecode {
@@ -319,7 +319,10 @@ fn getImmediateValue(
             if (byte_stream.len < 1) {
                 return Error.IncompleteProgram;
             }
-            return ImmediateValueDecode{ .length = 1, .value = byte_stream[0] };
+            return ImmediateValueDecode{ .length = 1, .operand = .{
+                .value = byte_stream[0],
+                .width = .byte,
+            } };
         },
         .word => {
             if (byte_stream.len < 2) {
@@ -327,7 +330,10 @@ fn getImmediateValue(
             }
             return ImmediateValueDecode{
                 .length = 2,
-                .value = make16(byte_stream[0], byte_stream[1]),
+                .operand = .{
+                    .value = make16(byte_stream[0], byte_stream[1]),
+                    .width = .word,
+                },
             };
         },
     }
@@ -428,10 +434,10 @@ fn decodeMemImmediate(
     }
 
     {
-        const immediate = try getImmediateValue(width, byte_stream[instruction.length..]);
+        const immediate = try getImmediateOperand(width, byte_stream[instruction.length..]);
 
         instruction.length += immediate.length;
-        instruction.src = .{ .immediate = .{ .value = immediate.value, .width = width } };
+        instruction.src = .{ .immediate = immediate.operand };
     }
 
     return instruction;
