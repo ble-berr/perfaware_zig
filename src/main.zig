@@ -920,8 +920,32 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xe8...0xea => error.InstructionNotImplemented,
 
         0xeb => decodeShortLabelJump(.jmp, byte_stream),
+        0xec => Instruction{
+            .length = 1,
+            .type = .in,
+            .dst = .{ .register = .al },
+            .src = .{ .register = .dx },
+        },
+        0xed => Instruction{
+            .length = 1,
+            .type = .in,
+            .dst = .{ .register = .ax },
+            .src = .{ .register = .dx },
+        },
+        0xee => Instruction{
+            .length = 1,
+            .type = .out,
+            .dst = .{ .register = .al },
+            .src = .{ .register = .dx },
+        },
+        0xef => Instruction{
+            .length = 1,
+            .type = .out,
+            .dst = .{ .register = .ax },
+            .src = .{ .register = .dx },
+        },
 
-        0xec...0xf3 => error.InstructionNotImplemented,
+        0xf0...0xf3 => error.InstructionNotImplemented,
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
