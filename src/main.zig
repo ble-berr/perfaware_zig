@@ -81,7 +81,7 @@ const InstructionOperand = union(enum) {
     direct_address: DirectAddress,
     effective_address: EffectiveAddress,
     immediate: ImmediateValue,
-    jump: i8,
+    short_jump: i8,
     segment: SegmentRegister,
 };
 
@@ -184,7 +184,7 @@ const InstructionType = enum {
 };
 
 const Instruction = struct {
-    length: usize,
+    length: u8,
     type: InstructionType,
     dst: ?InstructionOperand,
     src: ?InstructionOperand,
@@ -391,11 +391,9 @@ fn printOperand(
                 immediate.value,
             });
         },
-        .jump => |jump| {
+        .short_jump => |jump| {
             // NOTE(benjamin): 'nasm' does not account for the instruction
-            // length so we must add it here. Note that we're assuming that
-            // only short jumps are supported and so are hardcoding an
-            // instruction length of 2.
+            // length so we must add it here.
             try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2});
         },
         .segment => |segment| {
@@ -446,7 +444,7 @@ fn parseModByte(mod_byte: u8) ModByte {
 }
 
 const ModOperand = struct {
-    length: usize,
+    length: u8,
     operand: InstructionOperand,
 };
 
@@ -529,7 +527,7 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
 
 const ImmediateValueDecode = struct {
     operand: ImmediateValue,
-    length: u16,
+    length: u8,
 };
 
 fn getImmediateOperand(
@@ -809,7 +807,7 @@ fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const 
     return Instruction{
         .length = 2,
         .type = instruction_type,
-        .dst = .{ .jump = @bitCast(i8, byte_stream[1]) },
+        .dst = .{ .short_jump = @bitCast(i8, byte_stream[1]) },
         .src = null,
     };
 }
