@@ -123,6 +123,8 @@ const InstructionType = enum {
     pop,
     @"test",
     xchg,
+    in,
+    out,
 };
 
 const Instruction = struct {
@@ -189,6 +191,8 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .pop => "pop",
         .@"test" => "test",
         .xchg => "xchg",
+        .in => "in",
+        .out => "out",
     };
 }
 
@@ -886,6 +890,10 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xe1 => decodeShortLabelJump(.loope, byte_stream),
         0xe2 => decodeShortLabelJump(.loop, byte_stream),
         0xe3 => decodeShortLabelJump(.jcxz, byte_stream),
+        0xe4 => decodeAccImmediate(.in, .al, .byte, byte_stream),
+        0xe5 => decodeAccImmediate(.in, .ax, .byte, byte_stream),
+        0xe6 => decodeAccImmediate(.out, .al, .byte, byte_stream),
+        0xe7 => decodeAccImmediate(.out, .ax, .byte, byte_stream),
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
