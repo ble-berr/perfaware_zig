@@ -903,13 +903,16 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xb0...0xb7 => decodeRegisterImmediate(.mov, .byte, byte_stream),
         0xb8...0xbf => decodeRegisterImmediate(.mov, .word, byte_stream),
 
-        0xc0...0xc5 => error.InstructionNotImplemented,
+        0xc0...0xc1 => Error.IllegalInstruction,
+
+        0xc2...0xc5 => error.InstructionNotImplemented,
 
         0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
 
-        0xc8...0xd6 => error.InstructionNotImplemented,
+        0xc8...0xd5 => error.InstructionNotImplemented,
 
+        0xd6 => Error.IllegalInstruction,
         0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
 
         0xd8...0xdf => error.InstructionNotImplemented,
@@ -951,7 +954,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .src = .{ .register = .dx },
         },
 
-        0xf0...0xf3 => error.InstructionNotImplemented,
+        0xf0 => error.InstructionNotImplemented,
+        0xf1 => Error.IllegalInstruction,
+        0xf2...0xf3 => error.InstructionNotImplemented,
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
