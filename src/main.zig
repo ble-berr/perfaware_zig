@@ -735,6 +735,32 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x3c => decodeAccImmediate(.cmp, .byte, byte_stream),
         0x3d => decodeAccImmediate(.cmp, .word, byte_stream),
 
+        0x40...0x47 => Instruction{
+            .length = 1,
+            .type = .inc,
+            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .src = null,
+        },
+        0x48...0x4f => Instruction{
+            .length = 1,
+            .type = .dec,
+            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .src = null,
+        },
+
+        0x50...0x57 => Instruction{
+            .length = 1,
+            .type = .push,
+            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .src = null,
+        },
+        0x58...0x5f => Instruction{
+            .length = 1,
+            .type = .pop,
+            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .src = null,
+        },
+
         0x70 => decodeShortLabelJump(.jo, byte_stream),
         0x71 => decodeShortLabelJump(.jno, byte_stream),
         0x72 => decodeShortLabelJump(.jb, byte_stream),
