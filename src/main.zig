@@ -157,6 +157,12 @@ const InstructionType = enum {
     sti,
     cld,
     std,
+    not,
+    neg,
+    mul,
+    imul,
+    div,
+    idiv,
 };
 
 const Instruction = struct {
@@ -253,6 +259,12 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .sti => "sti",
         .cld => "cld",
         .std => "std",
+        .not => "not",
+        .neg => "neg",
+        .mul => "mul",
+        .imul => "imul",
+        .div => "div",
+        .idiv => "idiv",
     };
 }
 
@@ -825,6 +837,44 @@ fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
     };
 }
 
+fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
+
+    const instruction_type: InstructionType = switch (mod_byte.a) {
+        0 => .@"test",
+        1 => return Error.IllegalInstruction,
+        2 => .not,
+        3 => .neg,
+        4 => .mul,
+        5 => .imul,
+        6 => .div,
+        7 => .idiv,
+    };
+
+    var instruction = Instruction{
+        .length = 2 + mod_operand.length,
+        .type = instruction_type,
+        .dst = mod_operand.operand,
+        .src = undefined,
+    };
+
+    if (instruction_type != .@"test") {
+        instruction.src = null;
+        return instruction;
+    }
+
+    const immediate_operand = try getImmediateOperand(width, byte_stream[instruction.length..]);
+
+    instruction.length += immediate_operand.length;
+    instruction.src = .{ .immediate = immediate_operand.operand };
+    return instruction;
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -1094,7 +1144,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
         0xf5 => Instruction{ .length = 1, .type = .cmc, .dst = null, .src = null },
 
-        0xf6...0xf7 => error.InstructionNotImplemented,
+        0xf6 => decodeGroup1(.byte, byte_stream),
+        0xf7 => decodeGroup1(.word, byte_stream),
 
         0xf8 => Instruction{ .length = 1, .type = .clc, .dst = null, .src = null },
         0xf9 => Instruction{ .length = 1, .type = .stc, .dst = null, .src = null },
