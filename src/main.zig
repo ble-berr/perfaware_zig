@@ -271,6 +271,10 @@ fn printOperand(operand: InstructionOperand, writer: anytype) !void {
             });
         },
         .jump => |jump| {
+            // NOTE(benjamin): 'nasm' does not account for the instruction
+            // length so we must add it here. Note that we're assuming that
+            // only short jumps are supported and so are hardcoding an
+            // instruction length of 2.
             try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2});
         },
         .segment => |segment| {
