@@ -852,6 +852,14 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0x8f => decodePopRM16(byte_stream),
 
+        // NOTE(benjamin): 0x90 is NOP (xchg ax, ax).
+        0x90...0x97 => Instruction{
+            .length = 1,
+            .type = .xchg,
+            .dst = .{ .register = .ax },
+            .src = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+        },
+
         0xa0 => decodeMovAccMem(.to_acc, .byte, byte_stream),
         0xa1 => decodeMovAccMem(.to_acc, .word, byte_stream),
         0xa2 => decodeMovAccMem(.from_acc, .byte, byte_stream),
