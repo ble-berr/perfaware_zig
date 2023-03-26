@@ -1001,6 +1001,44 @@ fn decodeIntImmediate(byte_stream: []const u8) !Instruction {
     };
 }
 
+fn decodeSegmentRM(
+    instruction_type: InstructionType,
+    direction: enum { to_rm, from_rm },
+    byte_stream: []const u8,
+) !Instruction {
+    var instruction = Instruction{
+        .length = 2,
+        .type = instruction_type,
+        .dst = undefined,
+        .src = undefined,
+    };
+
+    if (byte_stream.len < instruction.length) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    if (4 <= mod_byte.a) {
+        return Error.IllegalInstruction;
+    }
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+    instruction.length += mod_operand.length;
+
+    switch (direction) {
+        .to_rm => {
+            instruction.dst = mod_operand.operand;
+            instruction.src = .{ .segment = @intToEnum(SegmentRegister, mod_byte.a) };
+        },
+        .from_rm => {
+            instruction.dst = .{ .segment = @intToEnum(SegmentRegister, mod_byte.a) };
+            instruction.src = mod_operand.operand;
+        },
+    }
+
+    return instruction;
+}
+
 fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     instruction: Instruction,
     prefix: InstructionPrefix,
@@ -1145,9 +1183,9 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0x8a => try decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
         0x8b => try decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
 
-        0x8c => return error.InstructionNotImplemented,
+        0x8c => try decodeSegmentRM(.mov, .to_rm, byte_stream),
         0x8d => try decodeAddressObject(.lea, byte_stream),
-        0x8e => return error.InstructionNotImplemented,
+        0x8e => try decodeSegmentRM(.mov, .from_rm, byte_stream),
 
         0x8f => try decodePopRM16(byte_stream),
 
