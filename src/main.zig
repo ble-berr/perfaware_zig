@@ -693,6 +693,26 @@ fn decodeGroup2(byte_stream: []const u8) !Instruction {
     };
 }
 
+fn decodePopRM16(byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    if (mod_byte.a != 0) {
+        return Error.IllegalInstruction;
+    }
+
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+    return Instruction{
+        .length = 2 + mod_operand.length,
+        .type = .pop,
+        .dst = mod_operand.operand,
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -818,6 +838,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
         0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
         0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
+
+        0x8f => decodePopRM16(byte_stream),
 
         0xa0 => decodeMovAccMem(.to_acc, .byte, byte_stream),
         0xa1 => decodeMovAccMem(.to_acc, .word, byte_stream),
