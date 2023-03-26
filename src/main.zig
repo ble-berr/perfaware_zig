@@ -1366,6 +1366,7 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
             switch (decoded) {
                 .instruction => |val| break val,
                 .prefix => |val| {
+                    try std.fmt.format(writer, "; 0x{x:0>2}\n", .{stream_buf[stream_pos]});
                     prefix = val;
                     stream_pos += 1;
                 },
