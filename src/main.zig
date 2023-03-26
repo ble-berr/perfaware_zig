@@ -804,6 +804,27 @@ fn decodeAddressObject(
     };
 }
 
+fn decodeIncDecRM(byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    const instruction_type: InstructionType = switch (mod_byte.a) {
+        0 => .inc,
+        1 => .dec,
+        2...7 => return Error.IllegalInstruction,
+    };
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+    return Instruction{
+        .length = 2 + mod_operand.length,
+        .type = instruction_type,
+        .dst = mod_operand.operand,
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -1082,7 +1103,7 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xfc => Instruction{ .length = 1, .type = .cld, .dst = null, .src = null },
         0xfd => Instruction{ .length = 1, .type = .std, .dst = null, .src = null },
 
-        0xfe => error.InstructionNotImplemented,
+        0xfe => decodeIncDecRM(byte_stream),
 
         // 0xff is described as Group2 in the manual
         0xff => decodeGroup2(byte_stream),
