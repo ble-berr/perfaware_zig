@@ -895,6 +895,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xe6 => decodeAccImmediate(.out, .al, .byte, byte_stream),
         0xe7 => decodeAccImmediate(.out, .ax, .byte, byte_stream),
 
+        0xeb => decodeShortLabelJump(.jmp, byte_stream),
+
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
         // 0xff is described as Group2 in the manual
