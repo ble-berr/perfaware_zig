@@ -566,40 +566,39 @@ fn decodeMovAccMem(
 
 fn decodeAccImmediate(
     instruction_type: InstructionType,
-    width: OperandWidth,
+    accumulator: Register,
+    immediate_width: OperandWidth,
     byte_stream: []const u8,
 ) !Instruction {
-    switch (width) {
+    var instruction = Instruction{
+        .length = undefined,
+        .type = instruction_type,
+        .dst = .{ .register = accumulator },
+        .src = .{ .immediate = .{
+            .value = undefined,
+            .width = immediate_width,
+        } },
+    };
+
+    switch (immediate_width) {
         .byte => {
             if (byte_stream.len < 2) {
                 return Error.IncompleteProgram;
             }
-            return Instruction{
-                .length = 2,
-                .type = instruction_type,
-                .dst = .{ .register = .al },
-                .src = .{ .immediate = .{
-                    .value = byte_stream[1],
-                    .width = .byte,
-                } },
-            };
+            instruction.length = 2;
+            instruction.src.?.immediate.value = byte_stream[1];
         },
         .word => {
             if (byte_stream.len < 3) {
                 return Error.IncompleteProgram;
             }
 
-            return Instruction{
-                .length = 3,
-                .type = instruction_type,
-                .dst = .{ .register = .ax },
-                .src = .{ .immediate = .{
-                    .value = make16(byte_stream[1], byte_stream[2]),
-                    .width = .word,
-                } },
-            };
+            instruction.length = 3;
+            instruction.src.?.immediate.value = make16(byte_stream[1], byte_stream[2]);
         },
     }
+
+    return instruction;
 }
 
 fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instruction {
@@ -727,8 +726,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x01 => decodeRegisterRM(.add, .to_rm, .word, byte_stream),
         0x02 => decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
         0x03 => decodeRegisterRM(.add, .from_rm, .word, byte_stream),
-        0x04 => decodeAccImmediate(.add, .byte, byte_stream),
-        0x05 => decodeAccImmediate(.add, .word, byte_stream),
+        0x04 => decodeAccImmediate(.add, .al, .byte, byte_stream),
+        0x05 => decodeAccImmediate(.add, .ax, .word, byte_stream),
         0x06 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .es }, .src = null },
         0x07 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .es }, .src = null },
 
@@ -736,8 +735,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x09 => decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
         0x0a => decodeRegisterRM(.@"or", .from_rm, .byte, byte_stream),
         0x0b => decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
-        0x0c => decodeAccImmediate(.@"or", .byte, byte_stream),
-        0x0d => decodeAccImmediate(.@"or", .word, byte_stream),
+        0x0c => decodeAccImmediate(.@"or", .al, .byte, byte_stream),
+        0x0d => decodeAccImmediate(.@"or", .ax, .word, byte_stream),
         0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs }, .src = null },
         0x0f => Error.IllegalInstruction,
 
@@ -745,8 +744,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x11 => decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
         0x12 => decodeRegisterRM(.adc, .from_rm, .byte, byte_stream),
         0x13 => decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
-        0x14 => decodeAccImmediate(.adc, .byte, byte_stream),
-        0x15 => decodeAccImmediate(.adc, .word, byte_stream),
+        0x14 => decodeAccImmediate(.adc, .al, .byte, byte_stream),
+        0x15 => decodeAccImmediate(.adc, .ax, .word, byte_stream),
         0x16 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ss }, .src = null },
         0x17 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ss }, .src = null },
 
@@ -754,8 +753,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x19 => decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
         0x1a => decodeRegisterRM(.sbb, .from_rm, .byte, byte_stream),
         0x1b => decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
-        0x1c => decodeAccImmediate(.sbb, .byte, byte_stream),
-        0x1d => decodeAccImmediate(.sbb, .word, byte_stream),
+        0x1c => decodeAccImmediate(.sbb, .al, .byte, byte_stream),
+        0x1d => decodeAccImmediate(.sbb, .ax, .word, byte_stream),
         0x1e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ds }, .src = null },
         0x1f => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ds }, .src = null },
 
@@ -763,29 +762,29 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x21 => decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
         0x22 => decodeRegisterRM(.@"and", .from_rm, .byte, byte_stream),
         0x23 => decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
-        0x24 => decodeAccImmediate(.@"and", .byte, byte_stream),
-        0x25 => decodeAccImmediate(.@"and", .word, byte_stream),
+        0x24 => decodeAccImmediate(.@"and", .al, .byte, byte_stream),
+        0x25 => decodeAccImmediate(.@"and", .ax, .word, byte_stream),
 
         0x28 => decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
         0x29 => decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
         0x2a => decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
         0x2b => decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
-        0x2c => decodeAccImmediate(.sub, .byte, byte_stream),
-        0x2d => decodeAccImmediate(.sub, .word, byte_stream),
+        0x2c => decodeAccImmediate(.sub, .al, .byte, byte_stream),
+        0x2d => decodeAccImmediate(.sub, .ax, .word, byte_stream),
 
         0x30 => decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
         0x31 => decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
         0x32 => decodeRegisterRM(.xor, .from_rm, .byte, byte_stream),
         0x33 => decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
-        0x34 => decodeAccImmediate(.xor, .byte, byte_stream),
-        0x35 => decodeAccImmediate(.xor, .word, byte_stream),
+        0x34 => decodeAccImmediate(.xor, .al, .byte, byte_stream),
+        0x35 => decodeAccImmediate(.xor, .ax, .word, byte_stream),
 
         0x38 => decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
         0x39 => decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
         0x3a => decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
         0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
-        0x3c => decodeAccImmediate(.cmp, .byte, byte_stream),
-        0x3d => decodeAccImmediate(.cmp, .word, byte_stream),
+        0x3c => decodeAccImmediate(.cmp, .al, .byte, byte_stream),
+        0x3d => decodeAccImmediate(.cmp, .ax, .word, byte_stream),
 
         0x40...0x47 => Instruction{
             .length = 1,
