@@ -121,6 +121,8 @@ const InstructionType = enum {
     jmp,
     push,
     pop,
+    @"test",
+    xchg,
 };
 
 const Instruction = struct {
@@ -185,6 +187,8 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .jmp => "jmp",
         .push => "push",
         .pop => "pop",
+        .@"test" => "test",
+        .xchg => "xchg",
     };
 }
 
@@ -833,6 +837,13 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0x82 => decodeOpRmExtended(.byte, byte_stream), // Duplicates 0x80?
         0x83 => decodeOpRmExtended(.word, byte_stream),
+
+        // Order shouldn't matter for these but we'll follow the convention
+        // from table 4-13 of the user's manual (9800722-03).
+        0x84 => decodeRegisterRM(.@"test", .to_rm, .byte, byte_stream),
+        0x85 => decodeRegisterRM(.@"test", .to_rm, .word, byte_stream),
+        0x86 => decodeRegisterRM(.xchg, .from_rm, .byte, byte_stream),
+        0x87 => decodeRegisterRM(.xchg, .from_rm, .word, byte_stream),
 
         0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
         0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
