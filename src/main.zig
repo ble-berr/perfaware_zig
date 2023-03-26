@@ -345,6 +345,18 @@ fn segmentMnemonic(segment: SegmentRegister) []const u8 {
     };
 }
 
+fn segmentPrefixMnemonic(opt_prefix: ?InstructionPrefix) []const u8 {
+    return if (opt_prefix) |prefix| {
+        return switch (prefix) {
+            .es => "es:",
+            .cs => "cs:",
+            .ss => "ss:",
+            .ds => "ds:",
+            else => "",
+        };
+    } else "";
+}
+
 fn printOperand(
     operand: InstructionOperand,
     opt_prefix: ?InstructionPrefix,
@@ -355,34 +367,20 @@ fn printOperand(
             try writer.writeAll(registerMnemonic(register));
         },
         .direct_address => |direct_address| {
-            if (opt_prefix) |prefix| {
-                switch (prefix) {
-                    .es => try writer.writeAll("es:"),
-                    .cs => try writer.writeAll("cs:"),
-                    .ss => try writer.writeAll("ss:"),
-                    .ds => try writer.writeAll("ds:"),
-                    else => {},
-                }
-            }
+            const segment_prefix = segmentPrefixMnemonic(opt_prefix);
 
-            try std.fmt.format(writer, "{s} [{d}]", .{
+            try std.fmt.format(writer, "{s} {s}[{d}]", .{
                 widthMnemonic(direct_address.width),
+                segment_prefix,
                 direct_address.address,
             });
         },
         .effective_address => |ea| {
-            if (opt_prefix) |prefix| {
-                switch (prefix) {
-                    .es => try writer.writeAll("es:"),
-                    .cs => try writer.writeAll("cs:"),
-                    .ss => try writer.writeAll("ss:"),
-                    .ds => try writer.writeAll("ds:"),
-                    else => {},
-                }
-            }
+            const segment_prefix = segmentPrefixMnemonic(opt_prefix);
 
-            try std.fmt.format(writer, "{s} [{s} {d:1}]", .{
+            try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
                 widthMnemonic(ea.width),
+                segment_prefix,
                 eacBaseMnemonic(ea.base),
                 @bitCast(i16, ea.offset),
             });
