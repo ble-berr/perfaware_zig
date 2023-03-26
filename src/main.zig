@@ -985,6 +985,22 @@ fn decodeRetImmediate(byte_stream: []const u8) !Instruction {
     };
 }
 
+fn decodeIntImmediate(byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    return Instruction{
+        .length = 2,
+        .type = .ret,
+        .dst = .{ .immediate = .{
+            .value = byte_stream[1],
+            .width = .byte,
+        } },
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     instruction: Instruction,
     prefix: InstructionPrefix,
@@ -1198,7 +1214,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
             .dst = .{ .immediate = .{ .value = 3, .width = .byte } },
             .src = null,
         },
-        0xcd => return error.InstructionNotImplemented,
+        0xcd => try decodeIntImmediate(byte_stream),
 
         0xce => Instruction{ .length = 1, .type = .into, .dst = null, .src = null },
         0xcf => Instruction{ .length = 1, .type = .iret, .dst = null, .src = null },
