@@ -65,6 +65,17 @@ const SegmentRegister = enum {
     ds, // data segment
 };
 
+const InstructionPrefix = enum {
+    lock,
+    repz,
+    repnz,
+    // segment overrides
+    es,
+    cs,
+    ss,
+    ds,
+};
+
 const InstructionOperand = union(enum) {
     register: Register,
     direct_address: DirectAddress,
@@ -318,18 +329,42 @@ fn segmentMnemonic(segment: SegmentRegister) []const u8 {
     };
 }
 
-fn printOperand(operand: InstructionOperand, writer: anytype) !void {
+fn printOperand(
+    operand: InstructionOperand,
+    opt_prefix: ?InstructionPrefix,
+    writer: anytype,
+) !void {
     switch (operand) {
         .register => |register| {
             try writer.writeAll(registerMnemonic(register));
         },
         .direct_address => |direct_address| {
+            if (opt_prefix) |prefix| {
+                switch (prefix) {
+                    .es => try writer.writeAll("es:"),
+                    .cs => try writer.writeAll("cs:"),
+                    .ss => try writer.writeAll("ss:"),
+                    .ds => try writer.writeAll("ds:"),
+                    else => {},
+                }
+            }
+
             try std.fmt.format(writer, "{s} [{d}]", .{
                 widthMnemonic(direct_address.width),
                 direct_address.address,
             });
         },
         .effective_address => |ea| {
+            if (opt_prefix) |prefix| {
+                switch (prefix) {
+                    .es => try writer.writeAll("es:"),
+                    .cs => try writer.writeAll("cs:"),
+                    .ss => try writer.writeAll("ss:"),
+                    .ds => try writer.writeAll("ds:"),
+                    else => {},
+                }
+            }
+
             try std.fmt.format(writer, "{s} [{s} {d:1}]", .{
                 widthMnemonic(ea.width),
                 eacBaseMnemonic(ea.base),
@@ -355,16 +390,29 @@ fn printOperand(operand: InstructionOperand, writer: anytype) !void {
     }
 }
 
-fn printInstruction(instruction: Instruction, writer: anytype) !void {
+fn printInstruction(
+    instruction: Instruction,
+    opt_prefix: ?InstructionPrefix,
+    writer: anytype,
+) !void {
+    if (opt_prefix) |prefix| {
+        switch (prefix) {
+            .lock => try writer.writeAll("lock "),
+            .repz => try writer.writeAll("repz "),
+            .repnz => try writer.writeAll("repnz "),
+            else => {},
+        }
+    }
+
     try writer.writeAll(instructionMnemonic(instruction.type));
 
     if (instruction.dst) |dst| {
         try writer.writeAll(" ");
-        try printOperand(dst, writer);
+        try printOperand(dst, opt_prefix, writer);
 
         if (instruction.src) |src| {
             try writer.writeAll(", ");
-            try printOperand(src, writer);
+            try printOperand(src, opt_prefix, writer);
         }
     }
 }
@@ -875,82 +923,85 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
     return instruction;
 }
 
-fn decodeInstruction(byte_stream: []const u8) !Instruction {
+fn decodeInstruction(byte_stream: []const u8) !union(enum) {
+    instruction: Instruction,
+    prefix: InstructionPrefix,
+} {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
     }
 
-    return switch (byte_stream[0]) {
-        0x00 => decodeRegisterRM(.add, .to_rm, .byte, byte_stream),
-        0x01 => decodeRegisterRM(.add, .to_rm, .word, byte_stream),
-        0x02 => decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
-        0x03 => decodeRegisterRM(.add, .from_rm, .word, byte_stream),
-        0x04 => decodeAccImmediate(.add, .al, .byte, byte_stream),
-        0x05 => decodeAccImmediate(.add, .ax, .word, byte_stream),
+    const instruction: Instruction = switch (byte_stream[0]) {
+        0x00 => try decodeRegisterRM(.add, .to_rm, .byte, byte_stream),
+        0x01 => try decodeRegisterRM(.add, .to_rm, .word, byte_stream),
+        0x02 => try decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
+        0x03 => try decodeRegisterRM(.add, .from_rm, .word, byte_stream),
+        0x04 => try decodeAccImmediate(.add, .al, .byte, byte_stream),
+        0x05 => try decodeAccImmediate(.add, .ax, .word, byte_stream),
         0x06 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .es }, .src = null },
         0x07 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .es }, .src = null },
 
-        0x08 => decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
-        0x09 => decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
-        0x0a => decodeRegisterRM(.@"or", .from_rm, .byte, byte_stream),
-        0x0b => decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
-        0x0c => decodeAccImmediate(.@"or", .al, .byte, byte_stream),
-        0x0d => decodeAccImmediate(.@"or", .ax, .word, byte_stream),
+        0x08 => try decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
+        0x09 => try decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
+        0x0a => try decodeRegisterRM(.@"or", .from_rm, .byte, byte_stream),
+        0x0b => try decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
+        0x0c => try decodeAccImmediate(.@"or", .al, .byte, byte_stream),
+        0x0d => try decodeAccImmediate(.@"or", .ax, .word, byte_stream),
         0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs }, .src = null },
-        0x0f => Error.IllegalInstruction,
+        0x0f => return Error.IllegalInstruction,
 
-        0x10 => decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
-        0x11 => decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
-        0x12 => decodeRegisterRM(.adc, .from_rm, .byte, byte_stream),
-        0x13 => decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
-        0x14 => decodeAccImmediate(.adc, .al, .byte, byte_stream),
-        0x15 => decodeAccImmediate(.adc, .ax, .word, byte_stream),
+        0x10 => try decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
+        0x11 => try decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
+        0x12 => try decodeRegisterRM(.adc, .from_rm, .byte, byte_stream),
+        0x13 => try decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
+        0x14 => try decodeAccImmediate(.adc, .al, .byte, byte_stream),
+        0x15 => try decodeAccImmediate(.adc, .ax, .word, byte_stream),
         0x16 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ss }, .src = null },
         0x17 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ss }, .src = null },
 
-        0x18 => decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
-        0x19 => decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
-        0x1a => decodeRegisterRM(.sbb, .from_rm, .byte, byte_stream),
-        0x1b => decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
-        0x1c => decodeAccImmediate(.sbb, .al, .byte, byte_stream),
-        0x1d => decodeAccImmediate(.sbb, .ax, .word, byte_stream),
+        0x18 => try decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
+        0x19 => try decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
+        0x1a => try decodeRegisterRM(.sbb, .from_rm, .byte, byte_stream),
+        0x1b => try decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
+        0x1c => try decodeAccImmediate(.sbb, .al, .byte, byte_stream),
+        0x1d => try decodeAccImmediate(.sbb, .ax, .word, byte_stream),
         0x1e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ds }, .src = null },
         0x1f => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ds }, .src = null },
 
-        0x20 => decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
-        0x21 => decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
-        0x22 => decodeRegisterRM(.@"and", .from_rm, .byte, byte_stream),
-        0x23 => decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
-        0x24 => decodeAccImmediate(.@"and", .al, .byte, byte_stream),
-        0x25 => decodeAccImmediate(.@"and", .ax, .word, byte_stream),
-        0x26 => error.InstructionNotImplemented,
+        0x20 => try decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
+        0x21 => try decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
+        0x22 => try decodeRegisterRM(.@"and", .from_rm, .byte, byte_stream),
+        0x23 => try decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
+        0x24 => try decodeAccImmediate(.@"and", .al, .byte, byte_stream),
+        0x25 => try decodeAccImmediate(.@"and", .ax, .word, byte_stream),
+        0x26 => return .{ .prefix = .es },
         0x27 => Instruction{ .length = 1, .type = .daa, .dst = null, .src = null },
 
-        0x28 => decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
-        0x29 => decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
-        0x2a => decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
-        0x2b => decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
-        0x2c => decodeAccImmediate(.sub, .al, .byte, byte_stream),
-        0x2d => decodeAccImmediate(.sub, .ax, .word, byte_stream),
-        0x2e => error.InstructionNotImplemented,
+        0x28 => try decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
+        0x29 => try decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
+        0x2a => try decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
+        0x2b => try decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
+        0x2c => try decodeAccImmediate(.sub, .al, .byte, byte_stream),
+        0x2d => try decodeAccImmediate(.sub, .ax, .word, byte_stream),
+        0x2e => return .{ .prefix = .cs },
         0x2f => Instruction{ .length = 1, .type = .das, .dst = null, .src = null },
 
-        0x30 => decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
-        0x31 => decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
-        0x32 => decodeRegisterRM(.xor, .from_rm, .byte, byte_stream),
-        0x33 => decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
-        0x34 => decodeAccImmediate(.xor, .al, .byte, byte_stream),
-        0x35 => decodeAccImmediate(.xor, .ax, .word, byte_stream),
-        0x36 => error.InstructionNotImplemented,
+        0x30 => try decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
+        0x31 => try decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
+        0x32 => try decodeRegisterRM(.xor, .from_rm, .byte, byte_stream),
+        0x33 => try decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
+        0x34 => try decodeAccImmediate(.xor, .al, .byte, byte_stream),
+        0x35 => try decodeAccImmediate(.xor, .ax, .word, byte_stream),
+        0x36 => return .{ .prefix = .ss },
         0x37 => Instruction{ .length = 1, .type = .aaa, .dst = null, .src = null },
 
-        0x38 => decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
-        0x39 => decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
-        0x3a => decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
-        0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
-        0x3c => decodeAccImmediate(.cmp, .al, .byte, byte_stream),
-        0x3d => decodeAccImmediate(.cmp, .ax, .word, byte_stream),
-        0x3e => error.InstructionNotImplemented,
+        0x38 => try decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
+        0x39 => try decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
+        0x3a => try decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
+        0x3b => try decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
+        0x3c => try decodeAccImmediate(.cmp, .al, .byte, byte_stream),
+        0x3d => try decodeAccImmediate(.cmp, .ax, .word, byte_stream),
+        0x3e => return .{ .prefix = .ds },
         0x3f => Instruction{ .length = 1, .type = .aas, .dst = null, .src = null },
 
         0x40...0x47 => Instruction{
@@ -979,48 +1030,48 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .src = null,
         },
 
-        0x60...0x6f => Error.IllegalInstruction,
+        0x60...0x6f => return Error.IllegalInstruction,
 
-        0x70 => decodeShortLabelJump(.jo, byte_stream),
-        0x71 => decodeShortLabelJump(.jno, byte_stream),
-        0x72 => decodeShortLabelJump(.jb, byte_stream),
-        0x73 => decodeShortLabelJump(.jnb, byte_stream),
-        0x74 => decodeShortLabelJump(.je, byte_stream),
-        0x75 => decodeShortLabelJump(.jne, byte_stream),
-        0x76 => decodeShortLabelJump(.jbe, byte_stream),
-        0x77 => decodeShortLabelJump(.jnbe, byte_stream),
-        0x78 => decodeShortLabelJump(.js, byte_stream),
-        0x79 => decodeShortLabelJump(.jns, byte_stream),
-        0x7a => decodeShortLabelJump(.jp, byte_stream),
-        0x7b => decodeShortLabelJump(.jnp, byte_stream),
-        0x7c => decodeShortLabelJump(.jl, byte_stream),
-        0x7d => decodeShortLabelJump(.jnl, byte_stream),
-        0x7e => decodeShortLabelJump(.jle, byte_stream),
-        0x7f => decodeShortLabelJump(.jnle, byte_stream),
+        0x70 => try decodeShortLabelJump(.jo, byte_stream),
+        0x71 => try decodeShortLabelJump(.jno, byte_stream),
+        0x72 => try decodeShortLabelJump(.jb, byte_stream),
+        0x73 => try decodeShortLabelJump(.jnb, byte_stream),
+        0x74 => try decodeShortLabelJump(.je, byte_stream),
+        0x75 => try decodeShortLabelJump(.jne, byte_stream),
+        0x76 => try decodeShortLabelJump(.jbe, byte_stream),
+        0x77 => try decodeShortLabelJump(.jnbe, byte_stream),
+        0x78 => try decodeShortLabelJump(.js, byte_stream),
+        0x79 => try decodeShortLabelJump(.jns, byte_stream),
+        0x7a => try decodeShortLabelJump(.jp, byte_stream),
+        0x7b => try decodeShortLabelJump(.jnp, byte_stream),
+        0x7c => try decodeShortLabelJump(.jl, byte_stream),
+        0x7d => try decodeShortLabelJump(.jnl, byte_stream),
+        0x7e => try decodeShortLabelJump(.jle, byte_stream),
+        0x7f => try decodeShortLabelJump(.jnle, byte_stream),
 
-        0x80 => decodeOpRmImmediate(.byte, byte_stream),
-        0x81 => decodeOpRmImmediate(.word, byte_stream),
+        0x80 => try decodeOpRmImmediate(.byte, byte_stream),
+        0x81 => try decodeOpRmImmediate(.word, byte_stream),
 
-        0x82 => decodeOpRmExtended(.byte, byte_stream), // Duplicates 0x80?
-        0x83 => decodeOpRmExtended(.word, byte_stream),
+        0x82 => try decodeOpRmExtended(.byte, byte_stream), // Duplicates 0x80?
+        0x83 => try decodeOpRmExtended(.word, byte_stream),
 
         // Order shouldn't matter for these but we'll follow the convention
         // from table 4-13 of the user's manual (9800722-03).
-        0x84 => decodeRegisterRM(.@"test", .to_rm, .byte, byte_stream),
-        0x85 => decodeRegisterRM(.@"test", .to_rm, .word, byte_stream),
-        0x86 => decodeRegisterRM(.xchg, .from_rm, .byte, byte_stream),
-        0x87 => decodeRegisterRM(.xchg, .from_rm, .word, byte_stream),
+        0x84 => try decodeRegisterRM(.@"test", .to_rm, .byte, byte_stream),
+        0x85 => try decodeRegisterRM(.@"test", .to_rm, .word, byte_stream),
+        0x86 => try decodeRegisterRM(.xchg, .from_rm, .byte, byte_stream),
+        0x87 => try decodeRegisterRM(.xchg, .from_rm, .word, byte_stream),
 
-        0x88 => decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
-        0x89 => decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
-        0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
-        0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
+        0x88 => try decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
+        0x89 => try decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
+        0x8a => try decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
+        0x8b => try decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
 
-        0x8c => error.InstructionNotImplemented,
-        0x8d => decodeAddressObject(.lea, byte_stream),
-        0x8e => error.InstructionNotImplemented,
+        0x8c => return error.InstructionNotImplemented,
+        0x8d => try decodeAddressObject(.lea, byte_stream),
+        0x8e => return error.InstructionNotImplemented,
 
-        0x8f => decodePopRM16(byte_stream),
+        0x8f => try decodePopRM16(byte_stream),
 
         // NOTE(benjamin): 0x90 is NOP (xchg ax, ax).
         0x90...0x97 => Instruction{
@@ -1032,24 +1083,24 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0x98 => Instruction{ .length = 1, .type = .cbw, .dst = null, .src = null },
         0x99 => Instruction{ .length = 1, .type = .cwd, .dst = null, .src = null },
-        0x9a => error.InstructionNotImplemented,
+        0x9a => return error.InstructionNotImplemented,
         0x9b => Instruction{ .length = 1, .type = .wait, .dst = null, .src = null },
         0x9c => Instruction{ .length = 1, .type = .pushf, .dst = null, .src = null },
         0x9d => Instruction{ .length = 1, .type = .popf, .dst = null, .src = null },
         0x9e => Instruction{ .length = 1, .type = .sahf, .dst = null, .src = null },
         0x9f => Instruction{ .length = 1, .type = .lahf, .dst = null, .src = null },
 
-        0xa0 => decodeMovAccMem(.to_acc, .byte, byte_stream),
-        0xa1 => decodeMovAccMem(.to_acc, .word, byte_stream),
-        0xa2 => decodeMovAccMem(.from_acc, .byte, byte_stream),
-        0xa3 => decodeMovAccMem(.from_acc, .word, byte_stream),
+        0xa0 => try decodeMovAccMem(.to_acc, .byte, byte_stream),
+        0xa1 => try decodeMovAccMem(.to_acc, .word, byte_stream),
+        0xa2 => try decodeMovAccMem(.from_acc, .byte, byte_stream),
+        0xa3 => try decodeMovAccMem(.from_acc, .word, byte_stream),
 
         0xa4 => Instruction{ .length = 1, .type = .movsb, .dst = null, .src = null },
         0xa5 => Instruction{ .length = 1, .type = .movsw, .dst = null, .src = null },
         0xa6 => Instruction{ .length = 1, .type = .cmpsb, .dst = null, .src = null },
         0xa7 => Instruction{ .length = 1, .type = .cmpsw, .dst = null, .src = null },
 
-        0xa8...0xa9 => error.InstructionNotImplemented,
+        0xa8...0xa9 => return error.InstructionNotImplemented,
 
         0xaa => Instruction{ .length = 1, .type = .stosb, .dst = null, .src = null },
         0xab => Instruction{ .length = 1, .type = .stosw, .dst = null, .src = null },
@@ -1058,24 +1109,24 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xae => Instruction{ .length = 1, .type = .scasb, .dst = null, .src = null },
         0xaf => Instruction{ .length = 1, .type = .scasw, .dst = null, .src = null },
 
-        0xb0...0xb7 => decodeRegisterImmediate(.mov, .byte, byte_stream),
-        0xb8...0xbf => decodeRegisterImmediate(.mov, .word, byte_stream),
+        0xb0...0xb7 => try decodeRegisterImmediate(.mov, .byte, byte_stream),
+        0xb8...0xbf => try decodeRegisterImmediate(.mov, .word, byte_stream),
 
-        0xc0...0xc1 => Error.IllegalInstruction,
+        0xc0...0xc1 => return Error.IllegalInstruction,
 
         // NOTE(benjamin): intrasegment.
-        0xc2 => error.InstructionNotImplemented,
+        0xc2 => return error.InstructionNotImplemented,
         0xc3 => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
 
-        0xc4 => decodeAddressObject(.les, byte_stream),
-        0xc5 => decodeAddressObject(.lds, byte_stream),
+        0xc4 => try decodeAddressObject(.les, byte_stream),
+        0xc5 => try decodeAddressObject(.lds, byte_stream),
 
-        0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
-        0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
+        0xc6 => try decodeMemImmediate(.mov, .byte, byte_stream),
+        0xc7 => try decodeMemImmediate(.mov, .word, byte_stream),
 
-        0xc8...0xc9 => Error.IllegalInstruction,
+        0xc8...0xc9 => return Error.IllegalInstruction,
         // NOTE(benjamin): intersegment.
-        0xca => error.InstructionNotImplemented,
+        0xca => return error.InstructionNotImplemented,
         0xcb => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
 
         0xcc => Instruction{
@@ -1084,34 +1135,34 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .dst = .{ .immediate = .{ .value = 3, .width = .byte } },
             .src = null,
         },
-        0xcd => error.InstructionNotImplemented,
+        0xcd => return error.InstructionNotImplemented,
 
         0xce => Instruction{ .length = 1, .type = .into, .dst = null, .src = null },
         0xcf => Instruction{ .length = 1, .type = .iret, .dst = null, .src = null },
 
-        0xd0...0xd3 => error.InstructionNotImplemented,
+        0xd0...0xd3 => return error.InstructionNotImplemented,
 
         // TODO(benjamin): assert (byte_stream[1] == 0x0a) ?
         0xd4 => Instruction{ .length = 1, .type = .aam, .dst = null, .src = null },
         0xd5 => Instruction{ .length = 1, .type = .aad, .dst = null, .src = null },
 
-        0xd6 => Error.IllegalInstruction,
+        0xd6 => return Error.IllegalInstruction,
         0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
 
-        0xd8...0xdf => error.InstructionNotImplemented,
+        0xd8...0xdf => return error.InstructionNotImplemented,
 
-        0xe0 => decodeShortLabelJump(.loopne, byte_stream),
-        0xe1 => decodeShortLabelJump(.loope, byte_stream),
-        0xe2 => decodeShortLabelJump(.loop, byte_stream),
-        0xe3 => decodeShortLabelJump(.jcxz, byte_stream),
-        0xe4 => decodeAccImmediate(.in, .al, .byte, byte_stream),
-        0xe5 => decodeAccImmediate(.in, .ax, .byte, byte_stream),
-        0xe6 => decodeAccImmediate(.out, .al, .byte, byte_stream),
-        0xe7 => decodeAccImmediate(.out, .ax, .byte, byte_stream),
+        0xe0 => try decodeShortLabelJump(.loopne, byte_stream),
+        0xe1 => try decodeShortLabelJump(.loope, byte_stream),
+        0xe2 => try decodeShortLabelJump(.loop, byte_stream),
+        0xe3 => try decodeShortLabelJump(.jcxz, byte_stream),
+        0xe4 => try decodeAccImmediate(.in, .al, .byte, byte_stream),
+        0xe5 => try decodeAccImmediate(.in, .ax, .byte, byte_stream),
+        0xe6 => try decodeAccImmediate(.out, .al, .byte, byte_stream),
+        0xe7 => try decodeAccImmediate(.out, .ax, .byte, byte_stream),
 
-        0xe8...0xea => error.InstructionNotImplemented,
+        0xe8...0xea => return error.InstructionNotImplemented,
 
-        0xeb => decodeShortLabelJump(.jmp, byte_stream),
+        0xeb => try decodeShortLabelJump(.jmp, byte_stream),
         0xec => Instruction{
             .length = 1,
             .type = .in,
@@ -1137,15 +1188,16 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .src = .{ .register = .dx },
         },
 
-        0xf0 => error.InstructionNotImplemented,
-        0xf1 => Error.IllegalInstruction,
-        0xf2...0xf3 => error.InstructionNotImplemented,
+        0xf0 => return .{ .prefix = .lock },
+        0xf1 => return Error.IllegalInstruction,
+        0xf2 => return .{ .prefix = .repnz },
+        0xf3 => return .{ .prefix = .repz },
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
         0xf5 => Instruction{ .length = 1, .type = .cmc, .dst = null, .src = null },
 
-        0xf6 => decodeGroup1(.byte, byte_stream),
-        0xf7 => decodeGroup1(.word, byte_stream),
+        0xf6 => try decodeGroup1(.byte, byte_stream),
+        0xf7 => try decodeGroup1(.word, byte_stream),
 
         0xf8 => Instruction{ .length = 1, .type = .clc, .dst = null, .src = null },
         0xf9 => Instruction{ .length = 1, .type = .stc, .dst = null, .src = null },
@@ -1154,11 +1206,13 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xfc => Instruction{ .length = 1, .type = .cld, .dst = null, .src = null },
         0xfd => Instruction{ .length = 1, .type = .std, .dst = null, .src = null },
 
-        0xfe => decodeGroup2Byte(byte_stream),
+        0xfe => try decodeGroup2Byte(byte_stream),
 
         // 0xff is described as Group2 in the manual
-        0xff => decodeGroup2Word(byte_stream),
+        0xff => try decodeGroup2Word(byte_stream),
     };
+
+    return .{ .instruction = instruction };
 }
 
 fn decodeProgram(reader: anytype, writer: anytype) !void {
@@ -1182,12 +1236,25 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
                 stream_pos = 0;
             }
         }
-        const instruction = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
-            std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), stream_buf[stream_pos] });
-            return err;
+
+        // Store only the last prefix to the instruction, if any.
+        var prefix: ?InstructionPrefix = null;
+        var instruction: Instruction = while (true) {
+            const decoded = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
+                std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), stream_buf[stream_pos] });
+                return err;
+            };
+
+            switch (decoded) {
+                .instruction => |val| break val,
+                .prefix => |val| {
+                    prefix = val;
+                    stream_pos += 1;
+                },
+            }
         };
 
-        try printInstruction(instruction, writer);
+        try printInstruction(instruction, prefix, writer);
         try writer.writeAll(" ;");
         for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
             try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
