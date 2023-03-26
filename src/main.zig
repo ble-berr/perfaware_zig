@@ -761,6 +761,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .src = null,
         },
 
+        0x60...0x6f => Error.IllegalInstruction,
+
         0x70 => decodeShortLabelJump(.jo, byte_stream),
         0x71 => decodeShortLabelJump(.jno, byte_stream),
         0x72 => decodeShortLabelJump(.jb, byte_stream),
