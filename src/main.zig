@@ -174,6 +174,13 @@ const InstructionType = enum {
     imul,
     div,
     idiv,
+    rol,
+    ror,
+    rcl,
+    rcr,
+    shl,
+    shr,
+    sar,
 };
 
 const Instruction = struct {
@@ -276,6 +283,13 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .imul => "imul",
         .div => "div",
         .idiv => "idiv",
+        .rol => "rol",
+        .ror => "ror",
+        .rcl => "rcl",
+        .rcr => "rcr",
+        .shl => "shl",
+        .shr => "shr",
+        .sar => "sar",
     };
 }
 
@@ -923,6 +937,38 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
     return instruction;
 }
 
+fn decodeShift(
+    width: OperandWidth,
+    src_operand: enum { one, cl },
+    byte_stream: []const u8,
+) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
+
+    return Instruction{
+        .length = 2 + mod_operand.length,
+        .type = switch (mod_byte.a) {
+            0 => .rol,
+            1 => .ror,
+            2 => .rcl,
+            3 => .rcr,
+            4 => .shl,
+            5 => .shr,
+            6 => return Error.IllegalInstruction,
+            7 => .sar,
+        },
+        .dst = mod_operand.operand,
+        .src = switch (src_operand) {
+            .one => .{ .immediate = .{ .value = 1, .width = .byte } },
+            .cl => .{ .register = .cl },
+        },
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     instruction: Instruction,
     prefix: InstructionPrefix,
@@ -1140,7 +1186,10 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xce => Instruction{ .length = 1, .type = .into, .dst = null, .src = null },
         0xcf => Instruction{ .length = 1, .type = .iret, .dst = null, .src = null },
 
-        0xd0...0xd3 => return error.InstructionNotImplemented,
+        0xd0 => try decodeShift(.byte, .one, byte_stream),
+        0xd1 => try decodeShift(.word, .one, byte_stream),
+        0xd2 => try decodeShift(.byte, .cl, byte_stream),
+        0xd3 => try decodeShift(.word, .cl, byte_stream),
 
         // TODO(benjamin): assert (byte_stream[1] == 0x0a) ?
         0xd4 => Instruction{ .length = 1, .type = .aam, .dst = null, .src = null },
