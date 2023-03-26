@@ -1146,7 +1146,8 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xa6 => Instruction{ .length = 1, .type = .cmpsb, .dst = null, .src = null },
         0xa7 => Instruction{ .length = 1, .type = .cmpsw, .dst = null, .src = null },
 
-        0xa8...0xa9 => return error.InstructionNotImplemented,
+        0xa8 => try decodeAccImmediate(.@"test", .al, .byte, byte_stream),
+        0xa9 => try decodeAccImmediate(.@"test", .ax, .word, byte_stream),
 
         0xaa => Instruction{ .length = 1, .type = .stosb, .dst = null, .src = null },
         0xab => Instruction{ .length = 1, .type = .stosw, .dst = null, .src = null },
