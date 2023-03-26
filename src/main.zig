@@ -107,6 +107,12 @@ const InstructionType = enum {
     loope,
     loop,
     jcxz,
+    inc,
+    dec,
+    call,
+    jmp,
+    push,
+    pop,
 };
 
 const Instruction = struct {
@@ -165,6 +171,12 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .loope => "loope",
         .loop => "loop",
         .jcxz => "jcxz",
+        .inc => "inc",
+        .dec => "dec",
+        .call => "call",
+        .jmp => "jmp",
+        .push => "push",
+        .pop => "pop",
     };
 }
 
@@ -637,6 +649,30 @@ fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const 
     };
 }
 
+fn decodeGroup2(byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+    return Instruction{
+        .length = 2 + mod_operand.length,
+        // TODO(benjamin): Check for invalid mod values maybe?
+        .type = switch (mod_byte.a) {
+            0 => .inc,
+            1 => .dec,
+            2, 3 => .call,
+            4, 5 => .jmp,
+            6 => .push,
+            7 => return Error.IllegalInstruction,
+        },
+        .dst = mod_operand.operand,
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -756,6 +792,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xe3 => decodeShortLabelJump(.jcxz, byte_stream),
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
+
+        // 0xff is described as Group2 in the manual
+        0xff => decodeGroup2(byte_stream),
 
         else => Error.IllegalInstruction,
     };
