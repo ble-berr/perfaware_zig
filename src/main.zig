@@ -769,12 +769,16 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x24 => decodeAccImmediate(.@"and", .al, .byte, byte_stream),
         0x25 => decodeAccImmediate(.@"and", .ax, .word, byte_stream),
 
+        0x26...0x27 => error.InstructionNotImplemented,
+
         0x28 => decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
         0x29 => decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
         0x2a => decodeRegisterRM(.sub, .from_rm, .byte, byte_stream),
         0x2b => decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
         0x2c => decodeAccImmediate(.sub, .al, .byte, byte_stream),
         0x2d => decodeAccImmediate(.sub, .ax, .word, byte_stream),
+
+        0x2e...0x2f => error.InstructionNotImplemented,
 
         0x30 => decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
         0x31 => decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
@@ -783,12 +787,16 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x34 => decodeAccImmediate(.xor, .al, .byte, byte_stream),
         0x35 => decodeAccImmediate(.xor, .ax, .word, byte_stream),
 
+        0x36...0x37 => error.InstructionNotImplemented,
+
         0x38 => decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
         0x39 => decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
         0x3a => decodeRegisterRM(.cmp, .from_rm, .byte, byte_stream),
         0x3b => decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
         0x3c => decodeAccImmediate(.cmp, .al, .byte, byte_stream),
         0x3d => decodeAccImmediate(.cmp, .ax, .word, byte_stream),
+
+        0x3e...0x3f => error.InstructionNotImplemented,
 
         0x40...0x47 => Instruction{
             .length = 1,
@@ -853,6 +861,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
         0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
 
+        0x8c...0x8e => error.InstructionNotImplemented,
+
         0x8f => decodePopRM16(byte_stream),
 
         // NOTE(benjamin): 0x90 is NOP (xchg ax, ax).
@@ -862,6 +872,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .dst = .{ .register = .ax },
             .src = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
         },
+
+        0x98...0x9f => error.InstructionNotImplemented,
 
         0xa0 => decodeMovAccMem(.to_acc, .byte, byte_stream),
         0xa1 => decodeMovAccMem(.to_acc, .word, byte_stream),
@@ -873,6 +885,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xa6 => Instruction{ .length = 1, .type = .cmpsb, .dst = null, .src = null },
         0xa7 => Instruction{ .length = 1, .type = .cmpsw, .dst = null, .src = null },
 
+        0xa8...0xa9 => error.InstructionNotImplemented,
+
         0xaa => Instruction{ .length = 1, .type = .stosb, .dst = null, .src = null },
         0xab => Instruction{ .length = 1, .type = .stosw, .dst = null, .src = null },
         0xac => Instruction{ .length = 1, .type = .lodsb, .dst = null, .src = null },
@@ -883,8 +897,12 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xb0...0xb7 => decodeRegisterImmediate(.mov, .byte, byte_stream),
         0xb8...0xbf => decodeRegisterImmediate(.mov, .word, byte_stream),
 
+        0xc0...0xc5 => error.InstructionNotImplemented,
+
         0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
+
+        0xc8...0xdf => error.InstructionNotImplemented,
 
         0xe0 => decodeShortLabelJump(.loopne, byte_stream),
         0xe1 => decodeShortLabelJump(.loope, byte_stream),
@@ -895,14 +913,18 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xe6 => decodeAccImmediate(.out, .al, .byte, byte_stream),
         0xe7 => decodeAccImmediate(.out, .ax, .byte, byte_stream),
 
+        0xe8...0xea => error.InstructionNotImplemented,
+
         0xeb => decodeShortLabelJump(.jmp, byte_stream),
+
+        0xec...0xf3 => error.InstructionNotImplemented,
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
 
+        0xf5...0xfe => error.InstructionNotImplemented,
+
         // 0xff is described as Group2 in the manual
         0xff => decodeGroup2(byte_stream),
-
-        else => Error.IllegalInstruction,
     };
 }
 
