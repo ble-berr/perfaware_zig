@@ -740,7 +740,7 @@ fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const 
     };
 }
 
-fn decodeGroup2(byte_stream: []const u8) !Instruction {
+fn decodeGroup2Word(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 2) {
         return Error.IncompleteProgram;
     }
@@ -804,7 +804,7 @@ fn decodeAddressObject(
     };
 }
 
-fn decodeIncDecRM(byte_stream: []const u8) !Instruction {
+fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 2) {
         return Error.IncompleteProgram;
     }
@@ -1103,10 +1103,10 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xfc => Instruction{ .length = 1, .type = .cld, .dst = null, .src = null },
         0xfd => Instruction{ .length = 1, .type = .std, .dst = null, .src = null },
 
-        0xfe => decodeIncDecRM(byte_stream),
+        0xfe => decodeGroup2Byte(byte_stream),
 
         // 0xff is described as Group2 in the manual
-        0xff => decodeGroup2(byte_stream),
+        0xff => decodeGroup2Word(byte_stream),
     };
 }
 
