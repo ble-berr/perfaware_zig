@@ -1027,7 +1027,7 @@ fn decodeIntImmediate(byte_stream: []const u8) !Instruction {
 
     return Instruction{
         .length = 2,
-        .type = .ret,
+        .type = .int,
         .dst = .{ .immediate = .{
             .value = byte_stream[1],
             .width = .byte,
