@@ -126,6 +126,9 @@ const InstructionType = enum {
     in,
     out,
     xlat,
+    lea,
+    les,
+    lds,
 };
 
 const Instruction = struct {
@@ -195,6 +198,9 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .in => "in",
         .out => "out",
         .xlat => "xlat",
+        .lea => "lea",
+        .les => "les",
+        .lds => "lds",
     };
 }
 
@@ -726,6 +732,26 @@ fn decodePopRM16(byte_stream: []const u8) !Instruction {
     };
 }
 
+fn decodeAddressObject(
+    instruction_type: InstructionType,
+    byte_stream: []const u8,
+) !Instruction {
+    if (byte_stream.len < 2) {
+        return Error.IncompleteProgram;
+    }
+
+    const mod_byte = parseModByte(byte_stream[1]);
+    // TODO(benjamin): reject (mod_byte.mod != 3) ?
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+    return Instruction{
+        .length = 2 + mod_operand.length,
+        .type = instruction_type,
+        .dst = .{ .register = Register.fromInt(.word, mod_byte.a) },
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -867,7 +893,9 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x8a => decodeRegisterRM(.mov, .from_rm, .byte, byte_stream),
         0x8b => decodeRegisterRM(.mov, .from_rm, .word, byte_stream),
 
-        0x8c...0x8e => error.InstructionNotImplemented,
+        0x8c => error.InstructionNotImplemented,
+        0x8d => decodeAddressObject(.lea, byte_stream),
+        0x8e => error.InstructionNotImplemented,
 
         0x8f => decodePopRM16(byte_stream),
 
@@ -905,7 +933,10 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
 
         0xc0...0xc1 => Error.IllegalInstruction,
 
-        0xc2...0xc5 => error.InstructionNotImplemented,
+        0xc2...0xc3 => error.InstructionNotImplemented,
+
+        0xc4 => decodeAddressObject(.les, byte_stream),
+        0xc5 => decodeAddressObject(.lds, byte_stream),
 
         0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
