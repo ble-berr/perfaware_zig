@@ -58,12 +58,20 @@ const ImmediateValue = struct {
     width: OperandWidth,
 };
 
+const SegmentRegister = enum {
+    es, // extra segment
+    cs, // code segment
+    ss, // stack segment
+    ds, // data segment
+};
+
 const InstructionOperand = union(enum) {
     register: Register,
     direct_address: DirectAddress,
     effective_address: EffectiveAddress,
     immediate: ImmediateValue,
     jump: i8,
+    segment: SegmentRegister,
 };
 
 const InstructionType = enum {
@@ -221,6 +229,15 @@ fn widthMnemonic(width: OperandWidth) []const u8 {
     };
 }
 
+fn segmentMnemonic(segment: SegmentRegister) []const u8 {
+    return switch (segment) {
+        .es => "es",
+        .cs => "cs",
+        .ss => "ss",
+        .ds => "ds",
+    };
+}
+
 fn printOperand(operand: InstructionOperand, writer: anytype) !void {
     switch (operand) {
         .register => |register| {
@@ -247,6 +264,9 @@ fn printOperand(operand: InstructionOperand, writer: anytype) !void {
         },
         .jump => |jump| {
             try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2});
+        },
+        .segment => |segment| {
+            try writer.writeAll(segmentMnemonic(segment));
         },
     }
 }
@@ -685,6 +705,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x03 => decodeRegisterRM(.add, .from_rm, .word, byte_stream),
         0x04 => decodeAccImmediate(.add, .byte, byte_stream),
         0x05 => decodeAccImmediate(.add, .word, byte_stream),
+        0x06 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .es }, .src = null },
+        0x07 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .es }, .src = null },
 
         0x08 => decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
         0x09 => decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
@@ -692,6 +714,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x0b => decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
         0x0c => decodeAccImmediate(.@"or", .byte, byte_stream),
         0x0d => decodeAccImmediate(.@"or", .word, byte_stream),
+        0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs }, .src = null },
+        0x0f => Error.IllegalInstruction,
 
         0x10 => decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
         0x11 => decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
@@ -699,6 +723,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x13 => decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
         0x14 => decodeAccImmediate(.adc, .byte, byte_stream),
         0x15 => decodeAccImmediate(.adc, .word, byte_stream),
+        0x16 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ss }, .src = null },
+        0x17 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ss }, .src = null },
 
         0x18 => decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
         0x19 => decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
@@ -706,6 +732,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x1b => decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
         0x1c => decodeAccImmediate(.sbb, .byte, byte_stream),
         0x1d => decodeAccImmediate(.sbb, .word, byte_stream),
+        0x1e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ds }, .src = null },
+        0x1f => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ds }, .src = null },
 
         0x20 => decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
         0x21 => decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
