@@ -969,6 +969,22 @@ fn decodeShift(
     };
 }
 
+fn decodeRetImmediate(byte_stream: []const u8) !Instruction {
+    if (byte_stream.len < 3) {
+        return Error.IncompleteProgram;
+    }
+
+    return Instruction{
+        .length = 3,
+        .type = .ret,
+        .dst = .{ .immediate = .{
+            .value = make16(byte_stream[1], byte_stream[2]),
+            .width = .word,
+        } },
+        .src = null,
+    };
+}
+
 fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     instruction: Instruction,
     prefix: InstructionPrefix,
@@ -1162,7 +1178,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xc0...0xc1 => return Error.IllegalInstruction,
 
         // NOTE(benjamin): intrasegment.
-        0xc2 => return error.InstructionNotImplemented,
+        0xc2 => try decodeRetImmediate(byte_stream),
         0xc3 => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
 
         0xc4 => try decodeAddressObject(.les, byte_stream),
