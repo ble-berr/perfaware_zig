@@ -125,6 +125,7 @@ const InstructionType = enum {
     xchg,
     in,
     out,
+    xlat,
 };
 
 const Instruction = struct {
@@ -193,6 +194,7 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .xchg => "xchg",
         .in => "in",
         .out => "out",
+        .xlat => "xlat",
     };
 }
 
@@ -906,7 +908,11 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xc6 => decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => decodeMemImmediate(.mov, .word, byte_stream),
 
-        0xc8...0xdf => error.InstructionNotImplemented,
+        0xc8...0xd6 => error.InstructionNotImplemented,
+
+        0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
+
+        0xd8...0xdf => error.InstructionNotImplemented,
 
         0xe0 => decodeShortLabelJump(.loopne, byte_stream),
         0xe1 => decodeShortLabelJump(.loope, byte_stream),
