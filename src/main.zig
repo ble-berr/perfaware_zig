@@ -402,7 +402,7 @@ fn printOperand(
             try std.fmt.format(writer, "{d}", .{jump});
         },
         .far_jump => |jump| {
-            try std.fmt.format(writer, "{d}:{d}", .{ jump.ip, jump.sp });
+            try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip });
         },
         .segment => |segment| {
             try writer.writeAll(segmentMnemonic(segment));
