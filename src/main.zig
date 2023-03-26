@@ -909,7 +909,7 @@ fn decodeAddressObject(
         .length = 2 + mod_operand.length,
         .type = instruction_type,
         .dst = .{ .register = Register.fromInt(.word, mod_byte.a) },
-        .src = null,
+        .src = mod_operand.operand,
     };
 }
 
