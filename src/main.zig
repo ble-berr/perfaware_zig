@@ -850,14 +850,14 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
             }
         }
         const instruction = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
-            std.debug.print("{s}: 0x{x}\n", .{ @errorName(err), stream_buf[stream_pos] });
+            std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), stream_buf[stream_pos] });
             return err;
         };
 
         try printInstruction(instruction, writer);
         try writer.writeAll(" ;");
         for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
-            try std.fmt.format(writer, " 0x{x}", .{byte});
+            try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
         }
         try writer.writeAll("\n");
 
