@@ -1413,6 +1413,10 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
             }
         };
 
+        if (instruction.type == .out) {
+            std.mem.swap(?InstructionOperand, &instruction.src, &instruction.dst);
+        }
+
         try printInstruction(instruction, prefix, writer);
         try writer.writeAll(" ;");
         for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
