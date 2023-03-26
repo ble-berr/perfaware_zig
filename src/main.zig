@@ -1278,7 +1278,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 
         0xc8...0xc9 => return Error.IllegalInstruction,
         // NOTE(benjamin): intersegment.
-        0xca => return error.InstructionNotImplemented,
+        0xca => try decodeRetImmediate(byte_stream),
         0xcb => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
 
         0xcc => Instruction{
