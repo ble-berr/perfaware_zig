@@ -1304,6 +1304,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xd6 => return Error.IllegalInstruction,
         0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
 
+        // NOTE(benjamin): unsupported by nasm.
         0xd8...0xdf => return error.InstructionNotImplemented,
 
         0xe0 => try decodeShortLabelJump(.loopne, byte_stream),
