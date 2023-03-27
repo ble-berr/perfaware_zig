@@ -45,12 +45,12 @@ const EacBase = enum {
 const EffectiveAddress = struct {
     base: EacBase,
     offset: u16,
-    width: OperandWidth,
+    width: ?OperandWidth,
 };
 
 const DirectAddress = struct {
     address: u16,
-    width: OperandWidth,
+    width: ?OperandWidth,
 };
 
 const ImmediateValue = struct {
@@ -370,7 +370,7 @@ fn printOperand(
             const segment_prefix = segmentPrefixMnemonic(opt_prefix);
 
             try std.fmt.format(writer, "{s} {s}[{d}]", .{
-                widthMnemonic(direct_address.width),
+                if (direct_address.width) |w| widthMnemonic(w) else "",
                 segment_prefix,
                 direct_address.address,
             });
@@ -379,7 +379,7 @@ fn printOperand(
             const segment_prefix = segmentPrefixMnemonic(opt_prefix);
 
             try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
-                widthMnemonic(ea.width),
+                if (ea.width) |w| widthMnemonic(w) else "",
                 segment_prefix,
                 eacBaseMnemonic(ea.base),
                 @bitCast(i16, ea.offset),
@@ -900,8 +900,15 @@ fn decodeAddressObject(
     }
 
     const mod_byte = parseModByte(byte_stream[1]);
-    // TODO(benjamin): reject (mod_byte.mod != 3) ?
-    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+    var mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+    switch (mod_operand.operand) {
+        .register => return Error.IllegalInstruction,
+        // workaround for nasm dissasembly output
+        .direct_address => |*da| da.*.width = null,
+        // workaround for nasm dissasembly output
+        .effective_address => |*ea| ea.*.width = null,
+        else => unreachable,
+    }
 
     return Instruction{
         .length = 2 + mod_operand.length,
