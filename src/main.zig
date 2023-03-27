@@ -929,7 +929,7 @@ fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
         1 => .dec,
         2...7 => return Error.IllegalInstruction,
     };
-    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+    const mod_operand = try getModOperand(mod_byte, .byte, byte_stream[2..]);
 
     return Instruction{
         .length = 2 + mod_operand.length,
