@@ -7,10 +7,16 @@ ansi_color_reset="\e[0m"
 
 mkdir -p tests/
 
+# 1: input file
+# 2: output file
+compile() {
+	nasm -O0 --before 'bits 16' -o "$2" "$1"
+}
+
 # 1: input
 # 2: out_filename
 decode_reencode() {
-	zig-out/bin/8086_decoder < "$1" > tests/"$2.asm" && nasm --before 'bits 16' -o "tests/$2" "tests/$2.asm"
+	zig-out/bin/8086_decoder < "$1" > "tests/${2}.asm" && compile "tests/${2}.asm" "tests/${2}" 
 }
 
 # 1: testfile
@@ -24,12 +30,9 @@ ko() {
 }
 
 for file in testfiles/valid/* ; do
-	filename="${file#testfiles/valid}"
+	filename="${file##*/}"
 
-	# Do not exit on error so that we go through all files
-	decode_reencode "$file" "$filename" || :
-
-	if cmp "$file" "tests/$filename" ; then
+	if decode_reencode "$file" "$filename" && cmp "$file" "tests/$filename" ; then
 		ok "$file"
 	else
 		ko "$file"
@@ -47,20 +50,13 @@ done
 
 # Assuming that names from testfiles/valid will not conflict since course files
 # are prefixed with "listing_".
-for file in course_material/perfaware/part1/listing_* ; do
-	case "$file" in
-		*.asm|*.txt)
-			continue
-			;;
-		*)
-			;;
-	esac
-	filename="${file#course_material/perfaware/part1/}"
+for file in course_material/perfaware/part1/listing_*.asm ; do
+	filename="${file##*/}"
+	filename="${filename%.asm}"
 
-	# Do not exit on error so that we go through all files
-	decode_reencode "$file" "$filename" || :
+	compile "$file" "tests/${filename}_ref"
 
-	if cmp "$file" "tests/$filename" ; then
+	if decode_reencode "tests/${filename}_ref" "${filename}_test" && cmp "tests/${filename}_ref" "tests/${filename}_test" ; then
 		ok "$file"
 	else
 		ko "$file"
