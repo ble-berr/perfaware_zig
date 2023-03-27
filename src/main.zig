@@ -1303,8 +1303,8 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xd3 => try decodeShift(.word, .cl, byte_stream),
 
         // TODO(benjamin): assert (byte_stream[1] == 0x0a) ?
-        0xd4 => Instruction{ .length = 1, .type = .aam, .dst = null, .src = null },
-        0xd5 => Instruction{ .length = 1, .type = .aad, .dst = null, .src = null },
+        0xd4 => Instruction{ .length = 2, .type = .aam, .dst = null, .src = null },
+        0xd5 => Instruction{ .length = 2, .type = .aad, .dst = null, .src = null },
 
         0xd6 => return Error.IllegalInstruction,
         0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
