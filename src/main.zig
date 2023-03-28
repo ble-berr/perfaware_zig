@@ -78,20 +78,6 @@ const InstructionOperand = union(enum) {
 
 const InstructionType = enum {
     hlt,
-
-    // TODO(benjamin): The reference does not use the b/w suffix to
-    // differentiate byte and word string operations.
-    movsb,
-    cmpsb,
-    stosb,
-    lodsb,
-    scasb,
-    movsw,
-    cmpsw,
-    stosw,
-    lodsw,
-    scasw,
-
     mov,
     add,
     @"or",
@@ -176,6 +162,18 @@ const InstructionType = enum {
     shr,
     sar,
     int3,
+    // TODO(benjamin): The reference does not use the b/w suffix to
+    // differentiate byte and word string operations.
+    movsb,
+    cmpsb,
+    stosb,
+    lodsb,
+    scasb,
+    movsw,
+    cmpsw,
+    stosw,
+    lodsw,
+    scasw,
 };
 
 const Instruction = struct {
