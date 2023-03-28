@@ -55,7 +55,7 @@ const DirectAddress = struct {
 
 const ImmediateValue = struct {
     value: u16,
-    width: OperandWidth,
+    width: ?OperandWidth,
 };
 
 const SegmentRegister = enum {
@@ -387,7 +387,7 @@ fn printOperand(
         },
         .immediate => |immediate| {
             try std.fmt.format(writer, "{s} {d}", .{
-                widthMnemonic(immediate.width),
+                if (immediate.width) |w| widthMnemonic(w) else "",
                 immediate.value,
             });
         },
@@ -1003,7 +1003,7 @@ fn decodeShift(
         },
         .dst = mod_operand.operand,
         .src = switch (src_operand) {
-            .one => .{ .immediate = .{ .value = 1, .width = .byte } },
+            .one => .{ .immediate = .{ .value = 1, .width = null } },
             .cl => .{ .register = .cl },
         },
     };
