@@ -149,6 +149,7 @@ const InstructionType = enum {
     sahf,
     lahf,
     ret,
+    retf,
     int,
     into,
     iret,
@@ -274,6 +275,7 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .sahf => "sahf",
         .lahf => "lahf",
         .ret => "ret",
+        .retf => "retf",
         .int => "int",
         .into => "into",
         .iret => "iret",
@@ -1016,14 +1018,17 @@ fn decodeShift(
     };
 }
 
-fn decodeRetImmediate(byte_stream: []const u8) !Instruction {
+fn decodeRetImmediate(kind: enum { intrasegment, intersegment }, byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 3) {
         return Error.IncompleteProgram;
     }
 
     return Instruction{
         .length = 3,
-        .type = .ret,
+        .type = switch (kind) {
+            .intrasegment => .ret,
+            .intersegment => .retf,
+        },
         .dst = .{ .immediate = .{
             .value = make16(byte_stream[1], byte_stream[2]),
             .width = .word,
@@ -1280,8 +1285,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 
         0xc0...0xc1 => return Error.IllegalInstruction,
 
-        // NOTE(benjamin): intrasegment.
-        0xc2 => try decodeRetImmediate(byte_stream),
+        0xc2 => try decodeRetImmediate(.intrasegment, byte_stream),
         0xc3 => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
 
         0xc4 => try decodeAddressObject(.les, byte_stream),
@@ -1291,9 +1295,9 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0xc7 => try decodeMemImmediate(.mov, .word, byte_stream),
 
         0xc8...0xc9 => return Error.IllegalInstruction,
-        // NOTE(benjamin): intersegment.
-        0xca => try decodeRetImmediate(byte_stream),
-        0xcb => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
+
+        0xca => try decodeRetImmediate(.intersegment, byte_stream),
+        0xcb => Instruction{ .length = 1, .type = .retf, .dst = null, .src = null },
 
         0xcc => Instruction{
             .length = 1,
