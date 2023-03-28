@@ -1,5 +1,99 @@
 const std = @import("std");
 
+const Emulator = struct {
+    var registers = [8]u16{ 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    const Destination = union(OperandWidth) {
+        byte: *u8,
+        word: *u16,
+    };
+    const Value = union(OperandWidth) {
+        byte: u8,
+        word: u16,
+    };
+
+    fn processMov(instruction: Instruction) !void {
+        const dst: Destination = switch (instruction.dst.?) {
+            .register => |r| switch (r) {
+                .al,
+                .dl,
+                .cl,
+                .bl,
+                .ah,
+                .dh,
+                .ch,
+                .bh,
+                => .{ .byte = &@ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
+                .ax,
+                .dx,
+                .cx,
+                .bx,
+                .sp,
+                .bp,
+                .si,
+                .di,
+                => .{ .word = &registers[@enumToInt(r) & 0x07] },
+            },
+            else => return error.UnsupportedInstruction,
+        };
+
+        const src: Value = switch (instruction.src.?) {
+            .register => |r| switch (r) {
+                .al,
+                .dl,
+                .cl,
+                .bl,
+                .ah,
+                .dh,
+                .ch,
+                .bh,
+                => .{ .byte = @ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
+                .ax,
+                .dx,
+                .cx,
+                .bx,
+                .sp,
+                .bp,
+                .si,
+                .di,
+                => .{ .word = registers[@enumToInt(r) & 0x07] },
+            },
+            .immediate => |iv| switch (iv.width orelse @as(OperandWidth, dst)) {
+                .byte => .{ .byte = @intCast(u8, iv.value) },
+                .word => .{ .word = iv.value },
+            },
+            else => return error.UnsupportedInstruction,
+        };
+
+        switch (dst) {
+            .byte => |dst_byte| switch (src) {
+                .byte => |src_byte| dst_byte.* = src_byte,
+                .word => return Error.IllegalInstruction,
+            },
+            .word => |dst_word| switch (src) {
+                .byte => |src_byte| dst_word.* = src_byte,
+                .word => |src_word| dst_word.* = src_word,
+            },
+        }
+    }
+
+    fn processInstruction(instruction: Instruction) !void {
+        return switch (instruction.type) {
+            .mov => processMov(instruction),
+            else => error.UnsupportedInstruction,
+        };
+    }
+
+    fn dumpMemory(writer: anytype) !void {
+        for (0..registers.len) |i| {
+            try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
+                registerMnemonic(Register.fromInt(.word, @intCast(u3, i))),
+                registers[i],
+            });
+        }
+    }
+};
+
 const OperandWidth = enum {
     byte,
     word,
@@ -1394,7 +1488,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     return .{ .instruction = instruction };
 }
 
-fn decodeProgram(reader: anytype, writer: anytype) !void {
+fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
     var stream_buf: [512]u8 = undefined;
 
     var program_pos: usize = 0;
@@ -1446,14 +1540,22 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
             }
         }
 
-        try printInstruction(instruction, prefix, writer);
-        try writer.writeAll(" ;");
-        for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
-            try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
+        if (emulate) {
+            try Emulator.processInstruction(instruction);
+        } else {
+            try printInstruction(instruction, prefix, writer);
+            try writer.writeAll(" ;");
+            for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
+                try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
+            }
+            try writer.writeAll("\n");
         }
-        try writer.writeAll("\n");
 
         stream_pos += instruction.length;
+    }
+
+    if (emulate) {
+        try Emulator.dumpMemory(writer);
     }
 }
 
@@ -1461,5 +1563,10 @@ pub fn main() !void {
     var stdout = std.io.getStdOut().writer();
     var stdin = std.io.getStdIn().reader();
 
-    try decodeProgram(stdin, stdout);
+    const argv = std.os.argv;
+    if (2 <= argv.len and argv[1][0] == 'e') {
+        try decodeProgram(stdin, stdout, true);
+    } else {
+        try decodeProgram(stdin, stdout, false);
+    }
 }

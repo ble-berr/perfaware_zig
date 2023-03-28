@@ -62,3 +62,15 @@ for file in testfiles/asm/*.asm course_material/perfaware/part1/listing_*.asm ; 
 		ko "$file"
 	fi
 done
+
+for file in \
+	course_material/perfaware/part1/listing_0043_*.asm \
+	course_material/perfaware/part1/listing_0044_*.asm \
+	course_material/perfaware/part1/listing_0045_*.asm \
+	; do
+	filename="${file##*/}"
+	filename="${filename%.asm}"
+
+	printf %s\\n "$filename"
+	zig-out/bin/8086_decoder e < "tests/${filename}_ref" || :
+done
