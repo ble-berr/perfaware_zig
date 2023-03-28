@@ -65,17 +65,6 @@ const SegmentRegister = enum {
     ds, // data segment
 };
 
-const InstructionPrefix = enum {
-    lock,
-    repz,
-    repnz,
-    // segment overrides
-    es,
-    cs,
-    ss,
-    ds,
-};
-
 const InstructionOperand = union(enum) {
     register: Register,
     direct_address: DirectAddress,
@@ -191,6 +180,21 @@ const Instruction = struct {
     type: InstructionType,
     dst: ?InstructionOperand,
     src: ?InstructionOperand,
+};
+
+const RepeatPrefix = enum {
+    repz,
+    repnz,
+};
+
+// NOTE(benjamin): still not clear on which prefixes can be combined, if any. A
+// first skim of the 8086 user's manual had me believe that only the latest
+// prefix would be in effect. Reading it again it seems to indicate that
+// interrupts will make the CPU forget about all prefixes but the last.
+const InstructionPrefixes = struct {
+    lock: bool,
+    repeat: ?RepeatPrefix,
+    segment: ?SegmentRegister,
 };
 
 const Error = error{
@@ -347,21 +351,20 @@ fn segmentMnemonic(segment: SegmentRegister) []const u8 {
     };
 }
 
-fn segmentPrefixMnemonic(opt_prefix: ?InstructionPrefix) []const u8 {
+fn segmentPrefixMnemonic(opt_prefix: ?SegmentRegister) []const u8 {
     return if (opt_prefix) |prefix| {
         return switch (prefix) {
             .es => "es:",
             .cs => "cs:",
             .ss => "ss:",
             .ds => "ds:",
-            else => "",
         };
     } else "";
 }
 
 fn printOperand(
     operand: InstructionOperand,
-    opt_prefix: ?InstructionPrefix,
+    segment_override: ?SegmentRegister,
     writer: anytype,
 ) !void {
     switch (operand) {
@@ -369,7 +372,7 @@ fn printOperand(
             try writer.writeAll(registerMnemonic(register));
         },
         .direct_address => |direct_address| {
-            const segment_prefix = segmentPrefixMnemonic(opt_prefix);
+            const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{d}]", .{
                 if (direct_address.width) |w| widthMnemonic(w) else "",
@@ -378,7 +381,7 @@ fn printOperand(
             });
         },
         .effective_address => |ea| {
-            const segment_prefix = segmentPrefixMnemonic(opt_prefix);
+            const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
                 if (ea.width) |w| widthMnemonic(w) else "",
@@ -412,15 +415,17 @@ fn printOperand(
 
 fn printInstruction(
     instruction: Instruction,
-    opt_prefix: ?InstructionPrefix,
+    prefixes: InstructionPrefixes,
     writer: anytype,
 ) !void {
-    if (opt_prefix) |prefix| {
-        switch (prefix) {
-            .lock => try writer.writeAll("lock "),
+    if (prefixes.lock) {
+        try writer.writeAll("lock ");
+    }
+
+    if (prefixes.repeat) |repeat| {
+        switch (repeat) {
             .repz => try writer.writeAll("repz "),
             .repnz => try writer.writeAll("repnz "),
-            else => {},
         }
     }
 
@@ -428,11 +433,11 @@ fn printInstruction(
 
     if (instruction.dst) |dst| {
         try writer.writeAll(" ");
-        try printOperand(dst, opt_prefix, writer);
+        try printOperand(dst, prefixes.segment, writer);
 
         if (instruction.src) |src| {
             try writer.writeAll(", ");
-            try printOperand(src, opt_prefix, writer);
+            try printOperand(src, prefixes.segment, writer);
         }
     }
 }
@@ -1083,7 +1088,9 @@ fn decodeSegmentRM(
 
 fn decodeInstruction(byte_stream: []const u8) !union(enum) {
     instruction: Instruction,
-    prefix: InstructionPrefix,
+    lock: void,
+    repeat: RepeatPrefix,
+    segment: SegmentRegister,
 } {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
@@ -1132,7 +1139,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0x23 => try decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
         0x24 => try decodeAccImmediate(.@"and", .al, .byte, byte_stream),
         0x25 => try decodeAccImmediate(.@"and", .ax, .word, byte_stream),
-        0x26 => return .{ .prefix = .es },
+        0x26 => return .{ .segment = .es },
         0x27 => Instruction{ .length = 1, .type = .daa, .dst = null, .src = null },
 
         0x28 => try decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
@@ -1141,7 +1148,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0x2b => try decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
         0x2c => try decodeAccImmediate(.sub, .al, .byte, byte_stream),
         0x2d => try decodeAccImmediate(.sub, .ax, .word, byte_stream),
-        0x2e => return .{ .prefix = .cs },
+        0x2e => return .{ .segment = .cs },
         0x2f => Instruction{ .length = 1, .type = .das, .dst = null, .src = null },
 
         0x30 => try decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
@@ -1150,7 +1157,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0x33 => try decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
         0x34 => try decodeAccImmediate(.xor, .al, .byte, byte_stream),
         0x35 => try decodeAccImmediate(.xor, .ax, .word, byte_stream),
-        0x36 => return .{ .prefix = .ss },
+        0x36 => return .{ .segment = .ss },
         0x37 => Instruction{ .length = 1, .type = .aaa, .dst = null, .src = null },
 
         0x38 => try decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
@@ -1159,7 +1166,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
         0x3b => try decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
         0x3c => try decodeAccImmediate(.cmp, .al, .byte, byte_stream),
         0x3d => try decodeAccImmediate(.cmp, .ax, .word, byte_stream),
-        0x3e => return .{ .prefix = .ds },
+        0x3e => return .{ .segment = .ds },
         0x3f => Instruction{ .length = 1, .type = .aas, .dst = null, .src = null },
 
         0x40...0x47 => Instruction{
@@ -1353,10 +1360,10 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
             .src = .{ .register = .dx },
         },
 
-        0xf0 => return .{ .prefix = .lock },
+        0xf0 => return .{ .lock = {} },
         0xf1 => return Error.IllegalInstruction,
-        0xf2 => return .{ .prefix = .repnz },
-        0xf3 => return .{ .prefix = .repz },
+        0xf2 => return .{ .repeat = .repnz },
+        0xf3 => return .{ .repeat = .repz },
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = null, .src = null },
         0xf5 => Instruction{ .length = 1, .type = .cmc, .dst = null, .src = null },
@@ -1402,23 +1409,21 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
             }
         }
 
-        // Store only the last prefix to the instruction, if any.
-        var prefix: ?InstructionPrefix = null;
-        var instruction: Instruction = while (true) {
+        var prefix = InstructionPrefixes{ .lock = false, .repeat = null, .segment = null };
+        var instruction: Instruction = while (stream_pos < stream_len) {
             const decoded = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
                 std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), stream_buf[stream_pos] });
                 return err;
             };
 
             switch (decoded) {
+                .lock => prefix.lock = true,
+                .repeat => |val| prefix.repeat = val,
+                .segment => |seg| prefix.segment = seg,
                 .instruction => |val| break val,
-                .prefix => |val| {
-                    try std.fmt.format(writer, "; 0x{x:0>2}\n", .{stream_buf[stream_pos]});
-                    prefix = val;
-                    stream_pos += 1;
-                },
             }
-        };
+            stream_pos += 1;
+        } else return Error.IncompleteProgram;
 
         if (instruction.type == .out) {
             std.mem.swap(?InstructionOperand, &instruction.src, &instruction.dst);
