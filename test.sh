@@ -29,7 +29,7 @@ ko() {
 	printf "${ansi_red_fg}X: %s${ansi_color_reset}\n" "$1"
 }
 
-for file in testfiles/valid/* ; do
+for file in testfiles/bin/* ; do
 	filename="${file##*/}"
 
 	if decode_reencode "$file" "$filename" && cmp "$file" "tests/$filename" ; then
@@ -50,7 +50,7 @@ done
 
 # Assuming that names from testfiles/valid will not conflict since course files
 # are prefixed with "listing_".
-for file in course_material/perfaware/part1/listing_*.asm ; do
+for file in testfiles/asm/*.asm course_material/perfaware/part1/listing_*.asm ; do
 	filename="${file##*/}"
 	filename="${filename%.asm}"
 
