@@ -183,6 +183,7 @@ const InstructionType = enum {
     shl,
     shr,
     sar,
+    int3,
 };
 
 const Instruction = struct {
@@ -292,6 +293,7 @@ fn instructionMnemonic(instruction: InstructionType) []const u8 {
         .shl => "shl",
         .shr => "shr",
         .sar => "sar",
+        .int3 => "int3",
     };
 }
 
@@ -1288,8 +1290,8 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 
         0xcc => Instruction{
             .length = 1,
-            .type = .int,
-            .dst = .{ .immediate = .{ .value = 3, .width = .byte } },
+            .type = .int3,
+            .dst = null,
             .src = null,
         },
         0xcd => try decodeIntImmediate(byte_stream),
