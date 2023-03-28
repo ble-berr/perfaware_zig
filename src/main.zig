@@ -71,8 +71,8 @@ const InstructionOperand = union(enum) {
     effective_address: EffectiveAddress,
     immediate: ImmediateValue,
     short_jump: i8,
-    near_jump: u16,
-    far_jump: struct { ip: u16, sp: u16 },
+    near_jump: i16,
+    far_jump: struct { ip: i16, sp: u16 },
     segment: SegmentRegister,
 };
 
@@ -831,9 +831,9 @@ fn decodeNearLabelJump(instruction_type: InstructionType, byte_stream: []const u
     }
 
     return Instruction{
-        .length = 2,
+        .length = 3,
         .type = instruction_type,
-        .dst = .{ .near_jump = make16(byte_stream[1], byte_stream[2]) },
+        .dst = .{ .near_jump = @bitCast(i16, make16(byte_stream[1], byte_stream[2])) },
         .src = null,
     };
 }
@@ -847,7 +847,7 @@ fn decodeFarLabelJump(instruction_type: InstructionType, byte_stream: []const u8
         .length = 5,
         .type = instruction_type,
         .dst = .{ .far_jump = .{
-            .ip = make16(byte_stream[1], byte_stream[2]),
+            .ip = @bitCast(i16, make16(byte_stream[1], byte_stream[2])),
             .sp = make16(byte_stream[3], byte_stream[4]),
         } },
         .src = null,
@@ -1390,6 +1390,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 fn decodeProgram(reader: anytype, writer: anytype) !void {
     var stream_buf: [512]u8 = undefined;
 
+    var program_pos: usize = 0;
     var stream_len: usize = try reader.read(stream_buf[0..]);
     var stream_pos: usize = 0;
     var eof: bool = false;
@@ -1423,10 +1424,19 @@ fn decodeProgram(reader: anytype, writer: anytype) !void {
                 .instruction => |val| break val,
             }
             stream_pos += 1;
+            program_pos += 1;
         } else return Error.IncompleteProgram;
+
+        program_pos += instruction.length;
 
         if (instruction.type == .out) {
             std.mem.swap(?InstructionOperand, &instruction.src, &instruction.dst);
+        }
+        if (instruction.dst) |*dst| {
+            switch (dst.*) {
+                .near_jump => |*jump| jump.* += @intCast(i16, program_pos),
+                else => {},
+            }
         }
 
         try printInstruction(instruction, prefix, writer);
