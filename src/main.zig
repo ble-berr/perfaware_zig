@@ -201,7 +201,6 @@ const InstructionPrefixes = struct {
 const Error = error{
     IllegalInstruction,
     IncompleteProgram,
-    UnsupportedOperation,
 };
 
 // TODO(benjamin): some comptime magic to generate these
