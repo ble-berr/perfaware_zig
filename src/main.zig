@@ -87,7 +87,7 @@ const Emulator = struct {
     fn dumpMemory(writer: anytype) !void {
         for (0..registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-                registerMnemonic(Register.fromInt(.word, @intCast(u3, i))),
+                enumFieldName(Register.fromInt(.word, @intCast(u3, i))),
                 registers[i],
             });
         }
@@ -126,10 +126,10 @@ const Register = enum {
 };
 
 const EacBase = enum {
-    sum_bx_si,
-    sum_bx_di,
-    sum_bp_si,
-    sum_bp_di,
+    @"bx + si",
+    @"bx + di",
+    @"bp + si",
+    @"bp + di",
     si,
     di,
     bp,
@@ -217,9 +217,9 @@ const InstructionType = enum {
     inc,
     dec,
     call,
-    callf,
+    @"call far",
     jmp,
-    jmpf,
+    @"jmp far",
     push,
     pop,
     @"test",
@@ -311,153 +311,16 @@ const Error = error{
 };
 
 // TODO(benjamin): some comptime magic to generate these
-fn instructionMnemonic(instruction: InstructionType) []const u8 {
-    return switch (instruction) {
-        .hlt => "hlt",
-        .movsb => "movsb",
-        .cmpsb => "cmpsb",
-        .stosb => "stosb",
-        .lodsb => "lodsb",
-        .scasb => "scasb",
-        .movsw => "movsw",
-        .cmpsw => "cmpsw",
-        .stosw => "stosw",
-        .lodsw => "lodsw",
-        .scasw => "scasw",
-        .mov => "mov",
-        .add => "add",
-        .@"or" => "or",
-        .adc => "adc",
-        .sbb => "sbb",
-        .@"and" => "and",
-        .sub => "sub",
-        .xor => "xor",
-        .cmp => "cmp",
-        .jo => "jo",
-        .jno => "jno",
-        .jb => "jb",
-        .jnb => "jnb",
-        .je => "je",
-        .jne => "jne",
-        .jbe => "jbe",
-        .jnbe => "jnbe",
-        .js => "js",
-        .jns => "jns",
-        .jp => "jp",
-        .jnp => "jnp",
-        .jl => "jl",
-        .jnl => "jnl",
-        .jle => "jle",
-        .jnle => "jnle",
-        .loopne => "loopne",
-        .loope => "loope",
-        .loop => "loop",
-        .jcxz => "jcxz",
-        .inc => "inc",
-        .dec => "dec",
-        .call => "call",
-        .callf => "call far",
-        .jmp => "jmp",
-        .jmpf => "jmp far",
-        .push => "push",
-        .pop => "pop",
-        .@"test" => "test",
-        .xchg => "xchg",
-        .in => "in",
-        .out => "out",
-        .xlat => "xlat",
-        .lea => "lea",
-        .les => "les",
-        .lds => "lds",
-        .daa => "daa",
-        .das => "das",
-        .aaa => "aaa",
-        .aas => "aas",
-        .aam => "aam",
-        .aad => "aad",
-        .cbw => "cbw",
-        .cwd => "cwd",
-        .wait => "wait",
-        .pushf => "pushf",
-        .popf => "popf",
-        .sahf => "sahf",
-        .lahf => "lahf",
-        .ret => "ret",
-        .retf => "retf",
-        .int => "int",
-        .into => "into",
-        .iret => "iret",
-        .cmc => "cmc",
-        .clc => "clc",
-        .stc => "stc",
-        .cli => "cli",
-        .sti => "sti",
-        .cld => "cld",
-        .std => "std",
-        .not => "not",
-        .neg => "neg",
-        .mul => "mul",
-        .imul => "imul",
-        .div => "div",
-        .idiv => "idiv",
-        .rol => "rol",
-        .ror => "ror",
-        .rcl => "rcl",
-        .rcr => "rcr",
-        .shl => "shl",
-        .shr => "shr",
-        .sar => "sar",
-        .int3 => "int3",
-    };
-}
-
-fn registerMnemonic(register: Register) []const u8 {
-    return switch (register) {
-        .al => "al",
-        .cl => "cl",
-        .dl => "dl",
-        .bl => "bl",
-        .ah => "ah",
-        .ch => "ch",
-        .dh => "dh",
-        .bh => "bh",
-        .ax => "ax",
-        .cx => "cx",
-        .dx => "dx",
-        .bx => "bx",
-        .sp => "sp",
-        .bp => "bp",
-        .si => "si",
-        .di => "di",
-    };
-}
-
-fn eacBaseMnemonic(base: EacBase) []const u8 {
-    return switch (base) {
-        .sum_bx_si => "bx + si",
-        .sum_bx_di => "bx + di",
-        .sum_bp_si => "bp + si",
-        .sum_bp_di => "bp + di",
-        .si => "si",
-        .di => "di",
-        .bp => "bp",
-        .bx => "bx",
-    };
-}
-
-fn widthMnemonic(width: OperandWidth) []const u8 {
-    return switch (width) {
-        .byte => "byte",
-        .word => "word",
-    };
-}
-
-fn segmentMnemonic(segment: SegmentRegister) []const u8 {
-    return switch (segment) {
-        .es => "es",
-        .cs => "cs",
-        .ss => "ss",
-        .ds => "ds",
+fn enumFieldName(enum_field: anytype) []const u8 {
+    return switch (@typeInfo(@TypeOf(enum_field))) {
+        // TODO(benjamin): check that enum starts at 0 and is continuous.
+        // A start offset can be used if the enum is continuous but does not start at 0.
+        // A slow for loop could be a fallback otherwise.
+        .Enum => |enum_info| switch (enum_field) {
+            inline else => |value| enum_info.fields[@enumToInt(value)].name,
+        },
+        // TODO(benjamin): improve error output
+        else => @compileError("enumFieldName was given a non Enum type"),
     };
 }
 
@@ -479,13 +342,13 @@ fn printOperand(
 ) !void {
     switch (operand) {
         .register => |register| {
-            try writer.writeAll(registerMnemonic(register));
+            try writer.writeAll(enumFieldName(register));
         },
         .direct_address => |direct_address| {
             const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{d}]", .{
-                if (direct_address.width) |w| widthMnemonic(w) else "",
+                if (direct_address.width) |w| enumFieldName(w) else "",
                 segment_prefix,
                 direct_address.address,
             });
@@ -494,15 +357,15 @@ fn printOperand(
             const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
-                if (ea.width) |w| widthMnemonic(w) else "",
+                if (ea.width) |w| enumFieldName(w) else "",
                 segment_prefix,
-                eacBaseMnemonic(ea.base),
+                enumFieldName(ea.base),
                 @bitCast(i16, ea.offset),
             });
         },
         .immediate => |immediate| {
             try std.fmt.format(writer, "{s} {d}", .{
-                if (immediate.width) |w| widthMnemonic(w) else "",
+                if (immediate.width) |w| enumFieldName(w) else "",
                 immediate.value,
             });
         },
@@ -518,7 +381,7 @@ fn printOperand(
             try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip });
         },
         .segment => |segment| {
-            try writer.writeAll(segmentMnemonic(segment));
+            try writer.writeAll(enumFieldName(segment));
         },
     }
 }
@@ -539,7 +402,7 @@ fn printInstruction(
         }
     }
 
-    try writer.writeAll(instructionMnemonic(instruction.type));
+    try writer.writeAll(enumFieldName(instruction.type));
 
     if (instruction.dst) |dst| {
         try writer.writeAll(" ");
@@ -979,9 +842,9 @@ fn decodeGroup2Word(byte_stream: []const u8) !Instruction {
             0 => .inc,
             1 => .dec,
             2 => .call,
-            3 => .callf,
+            3 => .@"call far",
             4 => .jmp,
-            5 => .jmpf,
+            5 => .@"jmp far",
             6 => .push,
             7 => return Error.IllegalInstruction,
         },
@@ -1557,7 +1420,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
             Emulator.processInstruction(instruction) catch |err| {
                 std.debug.print("{s}: {s} {s} {s}\n", .{
                     @errorName(err),
-                    instructionMnemonic(instruction.type),
+                    enumFieldName(instruction.type),
                     if (instruction.dst) |dst| dst.mnemonic() else "(null)",
                     if (instruction.src) |src| src.mnemonic() else "(null)",
                 });
