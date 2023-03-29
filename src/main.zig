@@ -310,7 +310,7 @@ const Error = error{
     IncompleteProgram,
 };
 
-// TODO(benjamin): some comptime magic to generate these
+// TODO(benjamin): improve error output
 fn enumFieldName(enum_field: anytype) []const u8 {
     return switch (@typeInfo(@TypeOf(enum_field))) {
         // TODO(benjamin): check that enum starts at 0 and is continuous.
@@ -319,9 +319,26 @@ fn enumFieldName(enum_field: anytype) []const u8 {
         .Enum => |enum_info| switch (enum_field) {
             inline else => |value| enum_info.fields[@enumToInt(value)].name,
         },
-        // TODO(benjamin): improve error output
+        .Union => |union_info| {
+            if (union_info.tag == null) {
+                @compileError("enumFieldName was given a non tagged Union");
+            }
+            switch (enum_field) {
+                inline else => |tag| union_info.fields[@enumToInt(tag)].name,
+            }
+        },
         else => @compileError("enumFieldName was given a non Enum type"),
     };
+}
+
+test "field name mapping" {
+    const E = enum { blue, red };
+    const U = union(enum) { green, yellow };
+
+    try std.testing.expect(std.mem.eql(u8, enumFieldName(E.blue), "blue"));
+    try std.testing.expect(std.mem.eql(u8, enumFieldName(E.red), "red"));
+    try std.testing.expect(std.mem.eql(u8, enumFieldName(U.green), "green"));
+    try std.testing.expect(std.mem.eql(u8, enumFieldName(U.yellow), "yellow"));
 }
 
 fn segmentPrefixMnemonic(opt_prefix: ?SegmentRegister) []const u8 {
