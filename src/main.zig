@@ -168,6 +168,19 @@ const InstructionOperand = union(enum) {
     near_jump: i16,
     far_jump: struct { ip: i16, sp: u16 },
     segment: SegmentRegister,
+
+    fn mnemonic(operand: InstructionOperand) []const u8 {
+        return switch (operand) {
+            .register => "register",
+            .direct_address => "direct_address",
+            .effective_address => "effective_address",
+            .immediate => "immediate",
+            .short_jump => "short_jump",
+            .near_jump => "near_jump",
+            .far_jump => "far_jump",
+            .segment => "segment",
+        };
+    }
 };
 
 const InstructionType = enum {
@@ -1541,7 +1554,15 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
         }
 
         if (emulate) {
-            try Emulator.processInstruction(instruction);
+            Emulator.processInstruction(instruction) catch |err| {
+                std.debug.print("{s}: {s} {s} {s}\n", .{
+                    @errorName(err),
+                    instructionMnemonic(instruction.type),
+                    if (instruction.dst) |dst| dst.mnemonic() else "(null)",
+                    if (instruction.src) |src| src.mnemonic() else "(null)",
+                });
+                return err;
+            };
         } else {
             try printInstruction(instruction, prefix, writer);
             try writer.writeAll(" ;");
