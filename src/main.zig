@@ -12,51 +12,42 @@ const Emulator = struct {
         word: u16,
     };
 
+    fn getRegister(r: Register) union(enum) { byte: *u8, word: *u16 } {
+        return switch (r) {
+            .al,
+            .dl,
+            .cl,
+            .bl,
+            .ah,
+            .dh,
+            .ch,
+            .bh,
+            => .{ .byte = &@ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
+            .ax,
+            .dx,
+            .cx,
+            .bx,
+            .sp,
+            .bp,
+            .si,
+            .di,
+            => .{ .word = &registers[@enumToInt(r) & 0x07] },
+        };
+    }
+
     fn processMov(instruction: Instruction) !void {
         const dst: Destination = switch (instruction.dst.?) {
-            .register => |r| switch (r) {
-                .al,
-                .dl,
-                .cl,
-                .bl,
-                .ah,
-                .dh,
-                .ch,
-                .bh,
-                => .{ .byte = &@ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
-                .ax,
-                .dx,
-                .cx,
-                .bx,
-                .sp,
-                .bp,
-                .si,
-                .di,
-                => .{ .word = &registers[@enumToInt(r) & 0x07] },
+            .register => |r| switch (getRegister(r)) {
+                .byte => |b| .{ .byte = b },
+                .word => |w| .{ .word = w },
             },
             else => return error.UnsupportedInstruction,
         };
 
         const src: Value = switch (instruction.src.?) {
-            .register => |r| switch (r) {
-                .al,
-                .dl,
-                .cl,
-                .bl,
-                .ah,
-                .dh,
-                .ch,
-                .bh,
-                => .{ .byte = @ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
-                .ax,
-                .dx,
-                .cx,
-                .bx,
-                .sp,
-                .bp,
-                .si,
-                .di,
-                => .{ .word = registers[@enumToInt(r) & 0x07] },
+            .register => |r| switch (getRegister(r)) {
+                .byte => |b| .{ .byte = b.* },
+                .word => |w| .{ .word = w.* },
             },
             .immediate => |iv| switch (iv.width orelse @as(OperandWidth, dst)) {
                 .byte => .{ .byte = @intCast(u8, iv.value) },
