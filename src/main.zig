@@ -1,3 +1,4 @@
+const machine = @import("machine.zig");
 const std = @import("std");
 
 const Emulator = struct {
@@ -1373,32 +1374,26 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 }
 
 fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
-    var stream_buf: [512]u8 = undefined;
+    const program_len = try reader.readAll(machine.memory[0..]);
 
-    var program_pos: usize = 0;
-    var stream_len: usize = try reader.read(stream_buf[0..]);
-    var stream_pos: usize = 0;
-    var eof: bool = false;
-
-    while (stream_pos < stream_len) {
-        if (!eof) {
-            // Longest instructions are 6 bytes long, there should be no risk of
-            // outrunning the buffer if we append under 6.
-            const remaining = stream_len - stream_pos;
-            if (remaining < 6) {
-                for (0..remaining) |i| {
-                    stream_buf[i] = stream_buf[stream_pos + i];
-                }
-                stream_len = remaining + try reader.read(stream_buf[remaining..]);
-                eof = (stream_len == remaining);
-                stream_pos = 0;
-            }
+    while (true) {
+        const pos = machine.instruction_pointer +| machine.code_segment_pointer;
+        if (machine.memory.len <= pos) {
+            return error.MemoryOverflow;
         }
 
+        if (pos == program_len) {
+            return;
+        } else if (program_len < pos) {
+            return error.ProgramOverflow;
+        }
+
+        var window = machine.memory[pos..];
+
         var prefix = InstructionPrefixes{ .lock = false, .repeat = null, .segment = null };
-        var instruction: Instruction = while (stream_pos < stream_len) {
-            const decoded = decodeInstruction(stream_buf[stream_pos..stream_len]) catch |err| {
-                std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), stream_buf[stream_pos] });
+        var instruction: Instruction = decode: for (0..window.len) |i| {
+            var decoded = decodeInstruction(window[i..]) catch |err| {
+                std.debug.print("{s}: 0x{x:0>2}\n", .{ @errorName(err), window[i] });
                 return err;
             };
 
@@ -1406,20 +1401,23 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
                 .lock => prefix.lock = true,
                 .repeat => |val| prefix.repeat = val,
                 .segment => |seg| prefix.segment = seg,
-                .instruction => |val| break val,
+                .instruction => |*inst| {
+                    inst.length += @intCast(u8, i);
+                    break :decode inst.*;
+                },
             }
-            stream_pos += 1;
-            program_pos += 1;
         } else return Error.IncompleteProgram;
 
-        program_pos += instruction.length;
+        machine.instruction_pointer += instruction.length;
 
         if (instruction.type == .out) {
             std.mem.swap(?InstructionOperand, &instruction.src, &instruction.dst);
         }
         if (instruction.dst) |*dst| {
             switch (dst.*) {
-                .near_jump => |*jump| jump.* += @intCast(i16, program_pos),
+                // TODO(benjamin): adding to the jump here is a hack for the
+                // assembly output and needs to be corrected.
+                .near_jump => |*jump| jump.* += @intCast(i16, machine.instruction_pointer +| machine.code_segment_pointer),
                 else => {},
             }
         }
@@ -1437,13 +1435,11 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
         } else {
             try printInstruction(instruction, prefix, writer);
             try writer.writeAll(" ;");
-            for (stream_buf[stream_pos..(stream_pos + instruction.length)]) |byte| {
+            for (window[0..instruction.length]) |byte| {
                 try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
             }
             try writer.writeAll("\n");
         }
-
-        stream_pos += instruction.length;
     }
 
     if (emulate) {
