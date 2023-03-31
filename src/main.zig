@@ -2,8 +2,6 @@ const machine = @import("machine.zig");
 const std = @import("std");
 
 const Emulator = struct {
-    var registers = [8]u16{ 0, 0, 0, 0, 0, 0, 0, 0 };
-
     const Destination = union(OperandWidth) {
         byte: *u8,
         word: *u16,
@@ -23,7 +21,7 @@ const Emulator = struct {
             .dh,
             .ch,
             .bh,
-            => .{ .byte = &@ptrCast(*[8]u8, &registers)[@enumToInt(r) & 0x07] },
+            => .{ .byte = &machine.byte_registers[@truncate(u3, @enumToInt(r))] },
             .ax,
             .dx,
             .cx,
@@ -32,7 +30,7 @@ const Emulator = struct {
             .bp,
             .si,
             .di,
-            => .{ .word = &registers[@enumToInt(r) & 0x07] },
+            => .{ .word = &machine.word_registers[@truncate(u3, @enumToInt(r))] },
         };
     }
 
@@ -80,10 +78,10 @@ const Emulator = struct {
     }
 
     fn dumpMemory(writer: anytype) !void {
-        for (0..registers.len) |i| {
+        for (0..machine.word_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
                 enumFieldName(Register.fromInt(.word, @intCast(u3, i))),
-                registers[i],
+                machine.word_registers[i],
             });
         }
     }
