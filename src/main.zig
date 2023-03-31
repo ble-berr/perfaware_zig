@@ -1375,9 +1375,13 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 
 fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
     const program_len = try reader.readAll(machine.memory[0..]);
+    const code_segment = blk: {
+        const code_segment_address = machine.segment_registers[@enumToInt(SegmentRegister.cs)];
+        break :blk machine.memory[code_segment_address .. code_segment_address + 0xffff];
+    };
 
     while (true) {
-        const pos = machine.instruction_pointer +| machine.code_segment_pointer;
+        const pos = machine.instruction_pointer;
         if (machine.memory.len <= pos) {
             return error.MemoryOverflow;
         }
@@ -1388,7 +1392,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
             return error.ProgramOverflow;
         }
 
-        var window = machine.memory[pos..];
+        var window = code_segment[pos..];
 
         var prefix = InstructionPrefixes{ .lock = false, .repeat = null, .segment = null };
         var instruction: Instruction = decode: for (0..window.len) |i| {
@@ -1417,7 +1421,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
             switch (dst.*) {
                 // TODO(benjamin): adding to the jump here is a hack for the
                 // assembly output and needs to be corrected.
-                .near_jump => |*jump| jump.* += @intCast(i16, machine.instruction_pointer +| machine.code_segment_pointer),
+                .near_jump => |*jump| jump.* += @intCast(i16, machine.instruction_pointer),
                 else => {},
             }
         }
