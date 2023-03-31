@@ -2,16 +2,17 @@ const machine = @import("machine.zig");
 const std = @import("std");
 
 const Emulator = struct {
-    const Destination = union(OperandWidth) {
+    const Ptr = union(OperandWidth) {
         byte: *u8,
         word: *u16,
     };
+
     const Value = union(OperandWidth) {
         byte: u8,
         word: u16,
     };
 
-    fn getRegister(register: Register) union(OperandWidth) { byte: *u8, word: *u16 } {
+    fn getRegister(register: Register) Ptr {
         return switch (register) {
             .al => .{ .byte = &machine.byte_registers[0] },
             .ah => .{ .byte = &machine.byte_registers[1] },
@@ -28,11 +29,8 @@ const Emulator = struct {
     }
 
     fn processMov(instruction: Instruction) !void {
-        const dst: Destination = switch (instruction.dst.?) {
-            .register => |r| switch (getRegister(r)) {
-                .byte => |b| .{ .byte = b },
-                .word => |w| .{ .word = w },
-            },
+        const dst: Ptr = switch (instruction.dst.?) {
+            .register => |r| getRegister(r),
             .segment => |sr| .{ .word = &machine.segment_registers[@enumToInt(sr)] },
             .immediate => unreachable,
             else => return error.UnsupportedInstruction,
