@@ -78,12 +78,21 @@ const Emulator = struct {
     }
 
     fn dumpMemory(writer: anytype) !void {
+        try writer.writeAll("===== 8086 =====\n");
         for (0..machine.word_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
                 enumFieldName(Register.fromInt(.word, @intCast(u3, i))),
                 machine.word_registers[i],
             });
         }
+        try writer.writeAll("---\n");
+        for (0..machine.segment_registers.len) |i| {
+            try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
+                enumFieldName(@intToEnum(SegmentRegister, i)),
+                machine.segment_registers[i],
+            });
+        }
+        try writer.writeAll("================\n");
     }
 };
 
@@ -1446,10 +1455,6 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
             try writer.writeAll("\n");
         }
     }
-
-    if (emulate) {
-        try Emulator.dumpMemory(writer);
-    }
 }
 
 pub fn main() !void {
@@ -1459,6 +1464,7 @@ pub fn main() !void {
     const argv = std.os.argv;
     if (2 <= argv.len and argv[1][0] == 'e') {
         try decodeProgram(stdin, stdout, true);
+        try Emulator.dumpMemory(stdout);
     } else {
         try decodeProgram(stdin, stdout, false);
     }
