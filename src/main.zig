@@ -92,7 +92,7 @@ const OperandWidth = enum {
     word,
 };
 
-const Register = enum {
+const Register = enum(u4) {
     al,
     cl,
     dl,
@@ -145,7 +145,7 @@ const ImmediateValue = struct {
     width: ?OperandWidth,
 };
 
-const SegmentRegister = enum {
+const SegmentRegister = enum(u2) {
     es, // extra segment
     cs, // code segment
     ss, // stack segment
