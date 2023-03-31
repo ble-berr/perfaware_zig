@@ -42,6 +42,7 @@ const Emulator = struct {
                 .byte => |b| .{ .byte = b },
                 .word => |w| .{ .word = w },
             },
+            .segment => |sr| .{ .word = &machine.segment_registers[@enumToInt(sr)] },
             .immediate => unreachable,
             else => return error.UnsupportedInstruction,
         };
@@ -51,6 +52,7 @@ const Emulator = struct {
                 .byte => |b| .{ .byte = b.* },
                 .word => |w| .{ .word = w.* },
             },
+            .segment => |sr| .{ .word = machine.segment_registers[@enumToInt(sr)] },
             .immediate => |iv| switch (iv.width orelse @as(OperandWidth, dst)) {
                 .byte => .{ .byte = @intCast(u8, iv.value) },
                 .word => .{ .word = iv.value },
