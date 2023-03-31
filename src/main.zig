@@ -11,26 +11,19 @@ const Emulator = struct {
         word: u16,
     };
 
-    fn getRegister(r: Register) union(enum) { byte: *u8, word: *u16 } {
-        return switch (r) {
-            .al,
-            .dl,
-            .cl,
-            .bl,
-            .ah,
-            .dh,
-            .ch,
-            .bh,
-            => .{ .byte = &machine.byte_registers[@truncate(u3, @enumToInt(r))] },
-            .ax,
-            .dx,
-            .cx,
-            .bx,
-            .sp,
-            .bp,
-            .si,
-            .di,
-            => .{ .word = &machine.word_registers[@truncate(u3, @enumToInt(r))] },
+    fn getRegister(register: Register) union(OperandWidth) { byte: *u8, word: *u16 } {
+        return switch (register) {
+            .al => .{ .byte = &machine.byte_registers[0] },
+            .ah => .{ .byte = &machine.byte_registers[1] },
+            .cl => .{ .byte = &machine.byte_registers[2] },
+            .ch => .{ .byte = &machine.byte_registers[3] },
+            .dl => .{ .byte = &machine.byte_registers[4] },
+            .dh => .{ .byte = &machine.byte_registers[5] },
+            .bl => .{ .byte = &machine.byte_registers[6] },
+            .bh => .{ .byte = &machine.byte_registers[7] },
+            else => |r| .{
+                .word = &machine.word_registers[@truncate(u3, @enumToInt(r))],
+            },
         };
     }
 
@@ -57,6 +50,26 @@ const Emulator = struct {
             },
             else => return error.UnsupportedInstruction,
         };
+
+        // Output debug info
+        {
+            const dst_name: []const u8 = switch (instruction.dst.?) {
+                .register => |r| enumFieldName(r),
+                .segment => |s| enumFieldName(s),
+                else => unreachable,
+            };
+
+            const dst_val: u16 = switch (dst) {
+                .byte => |b| b.*,
+                .word => |w| w.*,
+            };
+            const src_val: u16 = switch (src) {
+                .byte => |b| b,
+                .word => |w| w,
+            };
+
+            std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, src_val });
+        }
 
         switch (dst) {
             .byte => |dst_byte| switch (src) {
