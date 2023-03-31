@@ -42,6 +42,7 @@ const Emulator = struct {
                 .byte => |b| .{ .byte = b },
                 .word => |w| .{ .word = w },
             },
+            .immediate => unreachable,
             else => return error.UnsupportedInstruction,
         };
 
