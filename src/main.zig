@@ -1441,10 +1441,13 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
 }
 
 fn test_decode(reference_asm_file_path: []const u8) !void {
+    if (!@import("builtin").is_test) {
+        @compileError("test_decode can only be used for testing.");
+    }
+
     const nasm = @import("nasm.zig");
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    var allocator = std.testing.allocator;
 
     var cwd = blk: {
         var cwd_path = try std.process.getCwdAlloc(allocator);
