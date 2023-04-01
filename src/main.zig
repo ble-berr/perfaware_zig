@@ -92,7 +92,7 @@ const Emulator = struct {
         try writer.writeAll("===== 8086 =====\n");
         for (0..machine.word_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-                enumFieldName(Register.fromInt(.word, @intCast(u3, i))),
+                enumFieldName(Register.fromInt(.word, @truncate(u3, i))),
                 machine.word_registers[i],
             });
         }
@@ -453,9 +453,9 @@ const ModByte = struct {
 
 fn parseModByte(mod_byte: u8) ModByte {
     return .{
-        .mod = @intCast(u2, (mod_byte & 0o300) >> 6),
-        .a = @intCast(u3, (mod_byte & 0o070) >> 3),
-        .b = @intCast(u3, (mod_byte & 0o007) >> 0),
+        .mod = @truncate(u2, (mod_byte & 0o300) >> 6),
+        .a = @truncate(u3, (mod_byte & 0o070) >> 3),
+        .b = @truncate(u3, (mod_byte & 0o007) >> 0),
     };
 }
 
