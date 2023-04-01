@@ -1559,6 +1559,67 @@ test "illegal_0f" {
     try std.testing.expect(false);
 }
 
+fn simulate_test_program(program_file_path: []const u8) !void {
+    if (!@import("builtin").is_test) {
+        @compileError("test_simulation can only be used for testing.");
+    }
+    const allocator = std.testing.allocator;
+
+    var cwd = blk: {
+        var cwd_path = try std.process.getCwdAlloc(allocator);
+        defer allocator.free(cwd_path);
+        break :blk try std.fs.openDirAbsolute(cwd_path, .{});
+    };
+    defer cwd.close();
+
+    var program_file = try cwd.openFile(program_file_path, .{ .mode = .read_only });
+
+    machine.reset();
+    try decodeProgram(program_file.reader(), std.io.null_writer, true);
+}
+
+test "listing_0044_simulate" {
+    try simulate_test_program("course_material/perfaware/part1/listing_0044_register_movs");
+
+    const expected_registers = [machine.word_registers.len]u16{
+        0x0004, // ax
+        0x0002, // cx
+        0x0001, // dx
+        0x0003, // bx
+        0x0001, // sp
+        0x0002, // bp
+        0x0003, // si
+        0x0004, // di
+    };
+
+    try std.testing.expectEqualSlices(u16, &machine.word_registers, &expected_registers);
+}
+
+test "listing_0045_simulate" {
+    try simulate_test_program("course_material/perfaware/part1/listing_0045_challenge_register_movs");
+
+    const expected_registers = [machine.word_registers.len]u16{
+        0x4411, // ax
+        0x6677, // cx
+        0x7788, // dx
+        0x3344, // bx
+        0x4411, // sp
+        0x3344, // bp
+        0x6677, // si
+        0x7788, // di
+    };
+
+    const expected_segment_registers = [machine.segment_registers.len]u16{
+        0x6677, // es
+        0x0000, // cs
+        0x4411, // ss
+        0x3344, // ds
+    };
+
+    try std.testing.expectEqualSlices(u16, &machine.word_registers, &expected_registers);
+    try std.testing.expectEqualSlices(u16, &machine.segment_registers, &expected_segment_registers);
+}
+
 pub fn main() !void {
     var stdout = std.io.getStdOut().writer();
     var stdin = std.io.getStdIn().reader();
