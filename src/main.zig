@@ -389,7 +389,7 @@ fn printInstruction(
     }
 
     if (prefixes.repeat) |repeat| {
-        try std.fmt.print(writer, "{s} ", @tagName(repeat));
+        try std.fmt.format(writer, "{s} ", .{@tagName(repeat)});
     }
 
     try writer.writeAll(@tagName(instruction.type));
