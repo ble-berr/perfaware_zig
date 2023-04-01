@@ -345,44 +345,37 @@ fn printOperand(
     writer: anytype,
 ) !void {
     switch (operand) {
-        .register => |register| {
-            try writer.writeAll(@tagName(register));
-        },
-        .direct_address => |direct_address| {
-            try std.fmt.format(writer, "{s} {s}[{d}]", .{
+        .register => |register| try writer.writeAll(@tagName(register)),
+        .direct_address => |direct_address| try std.fmt.format(
+            writer,
+            "{s} {s}[{d}]",
+            .{
                 if (direct_address.width) |w| @tagName(w) else "",
                 segmentPrefixMnemonic(segment_override),
                 direct_address.address,
-            });
-        },
-        .effective_address => |ea| {
-            try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
+            },
+        ),
+        .effective_address => |ea| try std.fmt.format(
+            writer,
+            "{s} {s}[{s} {d:1}]",
+            .{
                 if (ea.width) |w| @tagName(w) else "",
                 segmentPrefixMnemonic(segment_override),
                 @tagName(ea.base),
                 @bitCast(i16, ea.offset),
-            });
-        },
-        .immediate => |immediate| {
-            try std.fmt.format(writer, "{s} {d}", .{
-                if (immediate.width) |w| @tagName(w) else "",
-                immediate.value,
-            });
-        },
-        .short_jump => |jump| {
-            // NOTE(benjamin): 'nasm' does not account for the instruction
-            // length so we must add it here.
-            try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2});
-        },
-        .near_jump => |jump| {
-            try std.fmt.format(writer, "{d}", .{jump});
-        },
-        .far_jump => |jump| {
-            try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip });
-        },
-        .segment => |segment| {
-            try writer.writeAll(@tagName(segment));
-        },
+            },
+        ),
+        .immediate => |immed| try std.fmt.format(
+            writer,
+            "{s} {d}",
+            .{ if (immed.width) |w| @tagName(w) else "", immed.value },
+        ),
+        // NOTE(benjamin): 'nasm' does not account for the instruction
+        // length so we must add it here.
+        .short_jump => |jump| try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2}),
+        .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump}),
+        .far_jump => |jump| try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip }),
+        .segment => |segment| try writer.writeAll(@tagName(segment)),
     }
 }
 
@@ -396,10 +389,7 @@ fn printInstruction(
     }
 
     if (prefixes.repeat) |repeat| {
-        switch (repeat) {
-            .repz => try writer.writeAll("repz "),
-            .repnz => try writer.writeAll("repnz "),
-        }
+        try std.fmt.print(writer, "{s} ", @tagName(repeat));
     }
 
     try writer.writeAll(@tagName(instruction.type));
