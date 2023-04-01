@@ -1354,6 +1354,8 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
 }
 
 fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
+    machine.reset();
+
     const program_len = try reader.readAll(machine.memory[0..]);
     const code_segment = blk: {
         const code_segment_address = machine.segment_registers[@enumToInt(SegmentRegister.cs)];
@@ -1475,7 +1477,6 @@ fn test_decode(reference_file_path: []const u8, file_format: enum { @"asm", bin 
             const test_asm_file = try cwd.createFile(test_asm_file_path, .{ .truncate = true });
             defer test_asm_file.close();
 
-            machine.reset();
             try decodeProgram(reference_bin_file.reader(), test_asm_file.writer(), false);
         }
 
@@ -1501,7 +1502,7 @@ fn test_decode(reference_file_path: []const u8, file_format: enum { @"asm", bin 
     const test_buf = try test_bin_file.readToEndAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(test_buf);
 
-    try std.testing.expect(std.mem.eql(u8, reference_buf, test_buf));
+    try std.testing.expectEqualSlices(u8, reference_buf, test_buf);
 }
 
 test "listing_0037_decode" {
@@ -1574,7 +1575,6 @@ fn simulate_test_program(program_file_path: []const u8) !void {
 
     var program_file = try cwd.openFile(program_file_path, .{ .mode = .read_only });
 
-    machine.reset();
     try decodeProgram(program_file.reader(), std.io.null_writer, true);
 }
 
