@@ -331,14 +331,12 @@ const Error = error{
 };
 
 fn segmentPrefixMnemonic(opt_prefix: ?SegmentRegister) []const u8 {
-    return if (opt_prefix) |prefix| {
-        return switch (prefix) {
-            .es => "es:",
-            .cs => "cs:",
-            .ss => "ss:",
-            .ds => "ds:",
-        };
-    } else "";
+    return switch (opt_prefix orelse return "") {
+        .es => "es:",
+        .cs => "cs:",
+        .ss => "ss:",
+        .ds => "ds:",
+    };
 }
 
 fn printOperand(
@@ -351,20 +349,16 @@ fn printOperand(
             try writer.writeAll(@tagName(register));
         },
         .direct_address => |direct_address| {
-            const segment_prefix = segmentPrefixMnemonic(segment_override);
-
             try std.fmt.format(writer, "{s} {s}[{d}]", .{
                 if (direct_address.width) |w| @tagName(w) else "",
-                segment_prefix,
+                segmentPrefixMnemonic(segment_override),
                 direct_address.address,
             });
         },
         .effective_address => |ea| {
-            const segment_prefix = segmentPrefixMnemonic(segment_override);
-
             try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
                 if (ea.width) |w| @tagName(w) else "",
-                segment_prefix,
+                segmentPrefixMnemonic(segment_override),
                 @tagName(ea.base),
                 @bitCast(i16, ea.offset),
             });
