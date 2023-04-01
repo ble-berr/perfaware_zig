@@ -28,26 +28,33 @@ const Emulator = struct {
         };
     }
 
-    fn processMov(instruction: Instruction) !void {
-        const dst: Ptr = switch (instruction.dst.?) {
+    fn getDestination(dst_operand: InstructionOperand) !Ptr {
+        return switch (dst_operand) {
             .register => |r| getRegister(r),
             .segment => |sr| .{ .word = &machine.segment_registers[@enumToInt(sr)] },
             .immediate => unreachable,
-            else => return error.UnsupportedInstruction,
+            else => error.UnsupportedDestination,
         };
+    }
 
-        const src: Value = switch (instruction.src.?) {
+    fn getSource(src_operand: InstructionOperand, dst_width: OperandWidth) !Value {
+        return switch (src_operand) {
             .register => |r| switch (getRegister(r)) {
                 .byte => |b| .{ .byte = b.* },
                 .word => |w| .{ .word = w.* },
             },
             .segment => |sr| .{ .word = machine.segment_registers[@enumToInt(sr)] },
-            .immediate => |iv| switch (iv.width orelse @as(OperandWidth, dst)) {
+            .immediate => |iv| switch (iv.width orelse dst_width) {
                 .byte => .{ .byte = @intCast(u8, iv.value) },
                 .word => .{ .word = iv.value },
             },
-            else => return error.UnsupportedInstruction,
+            else => error.UnsupportedInstruction,
         };
+    }
+
+    fn processMov(instruction: Instruction) !void {
+        const dst = try getDestination(instruction.dst.?);
+        const src = try getSource(instruction.src.?, @as(OperandWidth, dst));
 
         // Output debug info
         {
