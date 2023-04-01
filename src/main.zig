@@ -1423,7 +1423,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
     }
 }
 
-fn test_decode(reference_asm_file_path: []const u8) !void {
+fn test_decode(reference_file_path: []const u8, file_format: enum { @"asm", bin }) !void {
     if (!@import("builtin").is_test) {
         @compileError("test_decode can only be used for testing.");
     }
@@ -1441,19 +1441,25 @@ fn test_decode(reference_asm_file_path: []const u8) !void {
 
     cwd.makeDir("tests") catch {};
 
-    const filename = std.fs.path.basename(reference_asm_file_path);
+    var filename = std.fs.path.basename(reference_file_path);
+    if (std.mem.lastIndexOfScalar(u8, filename, '.')) |dot_index| {
+        filename = filename[0..dot_index];
+    }
 
-    const reference_bin_file = reference_bin_file: {
-        const bin_file_path = try std.fmt.allocPrint(
-            allocator,
-            "tests/{s}_ref.bin",
-            .{filename[0 .. filename.len - 4]},
-        );
-        defer allocator.free(bin_file_path);
+    const reference_bin_file = switch (file_format) {
+        .@"asm" => compile_asm: {
+            const bin_file_path = try std.fmt.allocPrint(
+                allocator,
+                "tests/{s}_ref.bin",
+                .{filename},
+            );
+            defer allocator.free(bin_file_path);
 
-        try nasm.compile(reference_asm_file_path, bin_file_path, allocator);
+            try nasm.compile(reference_file_path, bin_file_path, allocator);
 
-        break :reference_bin_file try cwd.openFile(bin_file_path, .{ .mode = .read_only });
+            break :compile_asm try cwd.openFile(bin_file_path, .{ .mode = .read_only });
+        },
+        .bin => try cwd.openFile(reference_file_path, .{ .mode = .read_only }),
     };
     defer reference_bin_file.close();
 
@@ -1461,7 +1467,7 @@ fn test_decode(reference_asm_file_path: []const u8) !void {
         const test_asm_file_path = try std.fmt.allocPrint(
             allocator,
             "tests/{s}_test.asm",
-            .{filename[0 .. filename.len - 4]},
+            .{filename},
         );
         defer allocator.free(test_asm_file_path);
 
@@ -1476,7 +1482,7 @@ fn test_decode(reference_asm_file_path: []const u8) !void {
         const test_bin_file_path = try std.fmt.allocPrint(
             allocator,
             "tests/{s}_test.bin",
-            .{filename[0 .. filename.len - 4]},
+            .{filename},
         );
         defer allocator.free(test_bin_file_path);
 
@@ -1499,37 +1505,58 @@ fn test_decode(reference_asm_file_path: []const u8) !void {
 }
 
 test "listing_0037_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0037_single_register_mov.asm");
+    try test_decode("course_material/perfaware/part1/listing_0037_single_register_mov.asm", .@"asm");
 }
 test "listing_0038_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0038_many_register_mov.asm");
+    try test_decode("course_material/perfaware/part1/listing_0038_many_register_mov.asm", .@"asm");
 }
 test "listing_0039_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0039_more_movs.asm");
+    try test_decode("course_material/perfaware/part1/listing_0039_more_movs.asm", .@"asm");
 }
 test "listing_0040_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0040_challenge_movs.asm");
+    try test_decode("course_material/perfaware/part1/listing_0040_challenge_movs.asm", .@"asm");
 }
 test "listing_0041_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm");
+    try test_decode("course_material/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm", .@"asm");
 }
 test "listing_0042_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0042_completionist_decode.asm");
+    try test_decode("course_material/perfaware/part1/listing_0042_completionist_decode.asm", .@"asm");
 }
 test "listing_0043_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0043_immediate_movs.asm");
+    try test_decode("course_material/perfaware/part1/listing_0043_immediate_movs.asm", .@"asm");
 }
 test "listing_0044_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0044_register_movs.asm");
+    try test_decode("course_material/perfaware/part1/listing_0044_register_movs.asm", .@"asm");
 }
 test "listing_0045_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0045_challenge_register_movs.asm");
+    try test_decode("course_material/perfaware/part1/listing_0045_challenge_register_movs.asm", .@"asm");
 }
 test "listing_0046_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0046_add_sub_cmp.asm");
+    try test_decode("course_material/perfaware/part1/listing_0046_add_sub_cmp.asm", .@"asm");
 }
 test "listing_0047_decode" {
-    try test_decode("course_material/perfaware/part1/listing_0047_challenge_flags.asm");
+    try test_decode("course_material/perfaware/part1/listing_0047_challenge_flags.asm", .@"asm");
+}
+
+test "jumps" {
+    try test_decode("testfiles/asm/jumps.asm", .@"asm");
+}
+test "hlt" {
+    try test_decode("testfiles/bin/hlt", .bin);
+}
+test "string" {
+    try test_decode("testfiles/bin/string", .bin);
+}
+
+test "illegal_0f" {
+    test_decode("testfiles/invalid/illegal_0f", .bin) catch |err| {
+        if (err == Error.IllegalInstruction) {
+            return;
+        } else {
+            return err;
+        }
+    };
+    try std.testing.expect(false);
 }
 
 pub fn main() !void {
