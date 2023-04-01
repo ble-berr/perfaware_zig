@@ -1440,7 +1440,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
     }
 }
 
-test "decode" {
+fn test_decode(reference_asm_file_path: []const u8) !void {
     const nasm = @import("nasm.zig");
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -1455,89 +1455,95 @@ test "decode" {
 
     cwd.makeDir("tests") catch {};
 
-    var test_dir = try cwd.openDir("tests", .{});
-    defer test_dir.close();
+    const filename = std.fs.path.basename(reference_asm_file_path);
 
-    const files = [_][]const u8{
-        "course_material/perfaware/part1/listing_0037_single_register_mov.asm",
-        "course_material/perfaware/part1/listing_0038_many_register_mov.asm",
-        "course_material/perfaware/part1/listing_0039_more_movs.asm",
-        "course_material/perfaware/part1/listing_0040_challenge_movs.asm",
-        "course_material/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm",
-        "course_material/perfaware/part1/listing_0042_completionist_decode.asm",
-        "course_material/perfaware/part1/listing_0043_immediate_movs.asm",
-        "course_material/perfaware/part1/listing_0044_register_movs.asm",
-        "course_material/perfaware/part1/listing_0045_challenge_register_movs.asm",
-        "course_material/perfaware/part1/listing_0046_add_sub_cmp.asm",
-        "course_material/perfaware/part1/listing_0047_challenge_flags.asm",
+    const reference_bin_file = reference_bin_file: {
+        const bin_file_path = try std.fmt.allocPrint(
+            allocator,
+            "tests/{s}_ref.bin",
+            .{filename[0 .. filename.len - 4]},
+        );
+        defer allocator.free(bin_file_path);
+
+        try nasm.compile(reference_asm_file_path, bin_file_path, allocator);
+
+        break :reference_bin_file try cwd.openFile(bin_file_path, .{ .mode = .read_only });
     };
+    defer reference_bin_file.close();
 
-    for (files) |reference_asm_file_path| {
-        const filename = std.fs.path.basename(reference_asm_file_path);
+    const test_bin_file = test_bin_file: {
+        const test_asm_file_path = try std.fmt.allocPrint(
+            allocator,
+            "tests/{s}_test.asm",
+            .{filename[0 .. filename.len - 4]},
+        );
+        defer allocator.free(test_asm_file_path);
 
-        const reference_bin_file = reference_bin_file: {
-            const bin_file_path = try std.fmt.allocPrint(
-                allocator,
-                "tests/{s}_ref.bin",
-                .{filename[0 .. filename.len - 4]},
-            );
-            defer allocator.free(bin_file_path);
+        {
+            const test_asm_file = try cwd.createFile(test_asm_file_path, .{ .truncate = true });
+            defer test_asm_file.close();
 
-            try nasm.compile(reference_asm_file_path, bin_file_path, allocator);
-
-            break :reference_bin_file try cwd.openFile(bin_file_path, .{ .mode = .read_only });
-        };
-        defer reference_bin_file.close();
-
-        const test_bin_file = test_bin_file: {
-            const test_asm_file_path = try std.fmt.allocPrint(
-                allocator,
-                "tests/{s}_test.asm",
-                .{filename[0 .. filename.len - 4]},
-            );
-            defer allocator.free(test_asm_file_path);
-
-            {
-                const test_asm_file = try cwd.createFile(test_asm_file_path, .{ .truncate = true });
-                defer test_asm_file.close();
-
-                machine.reset();
-                try decodeProgram(reference_bin_file.reader(), test_asm_file.writer(), false);
-            }
-
-            const test_bin_file_path = try std.fmt.allocPrint(
-                allocator,
-                "tests/{s}_test.bin",
-                .{filename[0 .. filename.len - 4]},
-            );
-            defer allocator.free(test_bin_file_path);
-
-            try nasm.compile(test_asm_file_path, test_bin_file_path, allocator);
-
-            break :test_bin_file try cwd.openFile(test_bin_file_path, .{ .mode = .read_only });
-        };
-        defer test_bin_file.close();
-
-        // compare files
-        try reference_bin_file.seekTo(0);
-
-        const reference_buf = try reference_bin_file.readToEndAlloc(allocator, std.math.maxInt(usize));
-        defer allocator.free(reference_buf);
-
-        const test_buf = try test_bin_file.readToEndAlloc(allocator, std.math.maxInt(usize));
-        defer allocator.free(test_buf);
-
-        try std.testing.expect(reference_buf.len == test_buf.len);
-        if (std.mem.indexOfDiff(u8, reference_buf, test_buf)) |index| {
-            std.debug.print("{s}: diff at index 0x{x}: 0x{x:>02} != 0x{x:>02}\n", .{
-                filename,
-                index,
-                reference_buf[index],
-                test_buf[index],
-            });
-            try std.testing.expect(false);
+            machine.reset();
+            try decodeProgram(reference_bin_file.reader(), test_asm_file.writer(), false);
         }
-    }
+
+        const test_bin_file_path = try std.fmt.allocPrint(
+            allocator,
+            "tests/{s}_test.bin",
+            .{filename[0 .. filename.len - 4]},
+        );
+        defer allocator.free(test_bin_file_path);
+
+        try nasm.compile(test_asm_file_path, test_bin_file_path, allocator);
+
+        break :test_bin_file try cwd.openFile(test_bin_file_path, .{ .mode = .read_only });
+    };
+    defer test_bin_file.close();
+
+    // compare files
+    try reference_bin_file.seekTo(0);
+
+    const reference_buf = try reference_bin_file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(reference_buf);
+
+    const test_buf = try test_bin_file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(test_buf);
+
+    try std.testing.expect(std.mem.eql(u8, reference_buf, test_buf));
+}
+
+test "listing_0037_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0037_single_register_mov.asm");
+}
+test "listing_0038_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0038_many_register_mov.asm");
+}
+test "listing_0039_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0039_more_movs.asm");
+}
+test "listing_0040_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0040_challenge_movs.asm");
+}
+test "listing_0041_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0041_add_sub_cmp_jnz.asm");
+}
+test "listing_0042_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0042_completionist_decode.asm");
+}
+test "listing_0043_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0043_immediate_movs.asm");
+}
+test "listing_0044_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0044_register_movs.asm");
+}
+test "listing_0045_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0045_challenge_register_movs.asm");
+}
+test "listing_0046_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0046_add_sub_cmp.asm");
+}
+test "listing_0047_decode" {
+    try test_decode("course_material/perfaware/part1/listing_0047_challenge_flags.asm");
 }
 
 pub fn main() !void {
