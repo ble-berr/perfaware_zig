@@ -52,8 +52,8 @@ const Emulator = struct {
         // Output debug info
         {
             const dst_name: []const u8 = switch (instruction.dst.?) {
-                .register => |r| enumFieldName(r),
-                .segment => |s| enumFieldName(s),
+                .register => |r| @tagName(r),
+                .segment => |s| @tagName(s),
                 else => unreachable,
             };
 
@@ -92,14 +92,14 @@ const Emulator = struct {
         try writer.writeAll("===== 8086 =====\n");
         for (0..machine.word_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-                enumFieldName(Register.fromInt(.word, @truncate(u3, i))),
+                @tagName(Register.fromInt(.word, @truncate(u3, i))),
                 machine.word_registers[i],
             });
         }
         try writer.writeAll("---\n");
         for (0..machine.segment_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-                enumFieldName(@intToEnum(SegmentRegister, i)),
+                @tagName(@intToEnum(SegmentRegister, i)),
                 machine.segment_registers[i],
             });
         }
@@ -323,37 +323,6 @@ const Error = error{
     IncompleteProgram,
 };
 
-// TODO(benjamin): improve error output
-fn enumFieldName(enum_field: anytype) []const u8 {
-    return switch (@typeInfo(@TypeOf(enum_field))) {
-        // TODO(benjamin): check that enum starts at 0 and is continuous.
-        // A start offset can be used if the enum is continuous but does not start at 0.
-        // A slow for loop could be a fallback otherwise.
-        .Enum => |enum_info| switch (enum_field) {
-            inline else => |value| enum_info.fields[@enumToInt(value)].name,
-        },
-        .Union => |union_info| {
-            if (union_info.tag == null) {
-                @compileError("enumFieldName was given a non tagged Union");
-            }
-            switch (enum_field) {
-                inline else => |tag| union_info.fields[@enumToInt(tag)].name,
-            }
-        },
-        else => @compileError("enumFieldName was given a non Enum type"),
-    };
-}
-
-test "field name mapping" {
-    const E = enum { blue, red };
-    const U = union(enum) { green, yellow };
-
-    try std.testing.expect(std.mem.eql(u8, enumFieldName(E.blue), "blue"));
-    try std.testing.expect(std.mem.eql(u8, enumFieldName(E.red), "red"));
-    try std.testing.expect(std.mem.eql(u8, enumFieldName(U.green), "green"));
-    try std.testing.expect(std.mem.eql(u8, enumFieldName(U.yellow), "yellow"));
-}
-
 fn segmentPrefixMnemonic(opt_prefix: ?SegmentRegister) []const u8 {
     return if (opt_prefix) |prefix| {
         return switch (prefix) {
@@ -372,13 +341,13 @@ fn printOperand(
 ) !void {
     switch (operand) {
         .register => |register| {
-            try writer.writeAll(enumFieldName(register));
+            try writer.writeAll(@tagName(register));
         },
         .direct_address => |direct_address| {
             const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{d}]", .{
-                if (direct_address.width) |w| enumFieldName(w) else "",
+                if (direct_address.width) |w| @tagName(w) else "",
                 segment_prefix,
                 direct_address.address,
             });
@@ -387,15 +356,15 @@ fn printOperand(
             const segment_prefix = segmentPrefixMnemonic(segment_override);
 
             try std.fmt.format(writer, "{s} {s}[{s} {d:1}]", .{
-                if (ea.width) |w| enumFieldName(w) else "",
+                if (ea.width) |w| @tagName(w) else "",
                 segment_prefix,
-                enumFieldName(ea.base),
+                @tagName(ea.base),
                 @bitCast(i16, ea.offset),
             });
         },
         .immediate => |immediate| {
             try std.fmt.format(writer, "{s} {d}", .{
-                if (immediate.width) |w| enumFieldName(w) else "",
+                if (immediate.width) |w| @tagName(w) else "",
                 immediate.value,
             });
         },
@@ -411,7 +380,7 @@ fn printOperand(
             try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip });
         },
         .segment => |segment| {
-            try writer.writeAll(enumFieldName(segment));
+            try writer.writeAll(@tagName(segment));
         },
     }
 }
@@ -432,7 +401,7 @@ fn printInstruction(
         }
     }
 
-    try writer.writeAll(enumFieldName(instruction.type));
+    try writer.writeAll(@tagName(instruction.type));
 
     if (instruction.dst) |dst| {
         try writer.writeAll(" ");
@@ -1451,7 +1420,7 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
             Emulator.processInstruction(instruction) catch |err| {
                 std.debug.print("{s}: {s} {s} {s}\n", .{
                     @errorName(err),
-                    enumFieldName(instruction.type),
+                    @tagName(instruction.type),
                     if (instruction.dst) |dst| dst.mnemonic() else "(null)",
                     if (instruction.src) |src| src.mnemonic() else "(null)",
                 });
