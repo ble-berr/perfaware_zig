@@ -6,3 +6,19 @@ pub var word_registers = [8]u16{ 0, 0, 0, 0, 0, 0, 0, 0 };
 pub const byte_registers = @ptrCast(*[8]u8, &word_registers);
 
 pub var segment_registers = [4]u16{ 0, 0, 0, 0 };
+
+pub fn reset() void {
+    for (0..memory.len) |i| {
+        memory[i] = 0;
+    }
+
+    instruction_pointer = 0;
+
+    for (0..word_registers.len) |i| {
+        word_registers[i] = 0;
+    }
+
+    for (0..segment_registers.len) |i| {
+        segment_registers[i] = 0;
+    }
+}
