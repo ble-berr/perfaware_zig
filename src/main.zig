@@ -438,22 +438,21 @@ fn extend8(byte: u8) u16 {
 
 fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8) !ModOperand {
     switch (mod_byte.mod) {
-        0 => switch (mod_byte.b) {
-            6 => {
-                if (byte_stream.len < 2) {
-                    return Error.IncompleteProgram;
-                }
-                return ModOperand{
-                    .length = 2,
-                    .operand = .{
-                        .direct_address = .{
-                            .address = make16(byte_stream[0], byte_stream[1]),
-                            .width = width,
-                        },
+        0 => if (mod_byte.b == 6) {
+            if (byte_stream.len < 2) {
+                return Error.IncompleteProgram;
+            }
+            return ModOperand{
+                .length = 2,
+                .operand = .{
+                    .direct_address = .{
+                        .address = make16(byte_stream[0], byte_stream[1]),
+                        .width = width,
                     },
-                };
-            },
-            else => return ModOperand{
+                },
+            };
+        } else {
+            return ModOperand{
                 .length = 0,
                 .operand = .{
                     .effective_address = .{
@@ -462,7 +461,7 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
                         .width = width,
                     },
                 },
-            },
+            };
         },
         1 => {
             if (byte_stream.len < 1) {
