@@ -1343,7 +1343,7 @@ fn decodeInstruction(byte_stream: []const u8) !union(enum) {
             .src = .{ .register = .dx },
         },
 
-        0xf0 => return .{ .lock = {} },
+        0xf0 => return .lock,
         0xf1 => return Error.IllegalInstruction,
         0xf2 => return .{ .repeat = .repnz },
         0xf3 => return .{ .repeat = .repz },
@@ -1378,18 +1378,14 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
     };
 
     while (true) {
-        const pos = machine.instruction_pointer;
-        if (machine.memory.len <= pos) {
-            return error.MemoryOverflow;
-        }
-
-        if (pos == program_len) {
-            return;
-        } else if (program_len < pos) {
+        if (code_segment.len < machine.instruction_pointer) {
             return error.ProgramOverflow;
+        } else if (machine.instruction_pointer == program_len) {
+            // implicit halt for development convenience.
+            return;
         }
 
-        var window = code_segment[pos..];
+        var window = code_segment[machine.instruction_pointer..];
 
         var prefix = InstructionPrefixes{ .lock = false, .repeat = null, .segment = null };
         var instruction: Instruction = decode: for (0..window.len) |i| {
