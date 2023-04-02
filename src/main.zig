@@ -32,29 +32,28 @@ const Emulator = struct {
         return switch (dst_operand) {
             .register => |r| getRegister(r),
             .segment => |sr| .{ .word = &machine.segment_registers[@enumToInt(sr)] },
-            .immediate => unreachable,
+            .immediate_byte, .immediate_word, .one => unreachable,
             else => error.UnsupportedDestination,
         };
     }
 
-    fn getSource(src_operand: InstructionOperand, dst_width: OperandWidth) !Value {
+    fn getSource(src_operand: InstructionOperand) !Value {
         return switch (src_operand) {
             .register => |r| switch (getRegister(r)) {
                 .byte => |b| .{ .byte = b.* },
                 .word => |w| .{ .word = w.* },
             },
             .segment => |sr| .{ .word = machine.segment_registers[@enumToInt(sr)] },
-            .immediate => |iv| switch (iv.width orelse dst_width) {
-                .byte => .{ .byte = @intCast(u8, iv.value) },
-                .word => .{ .word = iv.value },
-            },
+            .immediate_byte => |byte| .{ .byte = byte },
+            .immediate_word => |word| .{ .word = word },
+            .one => .{ .byte = 1 },
             else => error.UnsupportedInstruction,
         };
     }
 
     fn processMov(instruction: Instruction) !void {
         const dst = try getDestination(instruction.dst.?);
-        const src = try getSource(instruction.src.?, @as(OperandWidth, dst));
+        const src = try getSource(instruction.src.?);
 
         // Output debug info
         {
@@ -90,7 +89,7 @@ const Emulator = struct {
 
     fn processSub(instruction: Instruction) !void {
         const dst = try getDestination(instruction.dst.?);
-        const src = try getSource(instruction.src.?, @as(OperandWidth, dst));
+        const src = try getSource(instruction.src.?);
 
         // Output debug info
         {
@@ -204,11 +203,6 @@ const DirectAddress = struct {
     width: ?OperandWidth,
 };
 
-const ImmediateValue = struct {
-    value: u16,
-    width: ?OperandWidth,
-};
-
 const SegmentRegister = enum(u2) {
     es, // extra segment
     cs, // code segment
@@ -220,11 +214,14 @@ const InstructionOperand = union(enum) {
     register: Register,
     direct_address: DirectAddress,
     effective_address: EffectiveAddress,
-    immediate: ImmediateValue,
+    immediate_byte: u8,
+    immediate_word: u16,
     short_jump: i8,
     near_jump: i16,
     far_jump: struct { ip: i16, sp: u16 },
     segment: SegmentRegister,
+    // hack for nasm not accepting "byte 1" for shift operations
+    one: void,
 };
 
 const InstructionType = enum {
@@ -389,17 +386,15 @@ fn printOperand(
                 @bitCast(i16, ea.offset),
             },
         ),
-        .immediate => |immed| try std.fmt.format(
-            writer,
-            "{s} {d}",
-            .{ if (immed.width) |w| @tagName(w) else "", immed.value },
-        ),
+        .immediate_byte => |byte| try std.fmt.format(writer, "byte {d}", .{byte}),
+        .immediate_word => |word| try std.fmt.format(writer, "word {d}", .{word}),
         // NOTE(benjamin): 'nasm' does not account for the instruction
         // length so we must add it here.
         .short_jump => |jump| try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2}),
         .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump}),
         .far_jump => |jump| try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip }),
         .segment => |segment| try writer.writeAll(@tagName(segment)),
+        .one => try writer.writeAll("1"),
     }
 }
 
@@ -524,36 +519,24 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
     }
 }
 
-const ImmediateValueDecode = struct {
-    operand: ImmediateValue,
-    length: u8,
-};
-
 fn getImmediateOperand(
     width: OperandWidth,
     byte_stream: []const u8,
-) !ImmediateValueDecode {
+) !struct { length: u8, operand: InstructionOperand } {
     switch (width) {
         .byte => {
             if (byte_stream.len < 1) {
                 return Error.IncompleteProgram;
             }
-            return ImmediateValueDecode{ .length = 1, .operand = .{
-                .value = byte_stream[0],
-                .width = .byte,
-            } };
+            return .{ .length = 1, .operand = .{ .immediate_byte = byte_stream[0] } };
         },
         .word => {
             if (byte_stream.len < 2) {
                 return Error.IncompleteProgram;
             }
-            return ImmediateValueDecode{
-                .length = 2,
-                .operand = .{
-                    .value = make16(byte_stream[0], byte_stream[1]),
-                    .width = .word,
-                },
-            };
+            return .{ .length = 2, .operand = .{
+                .immediate_word = make16(byte_stream[0], byte_stream[1]),
+            } };
         },
     }
 }
@@ -599,33 +582,30 @@ fn decodeRegisterImmediate(
     width: OperandWidth,
     byte_stream: []const u8,
 ) !Instruction {
-    var instruction = Instruction{
-        .length = switch (width) {
-            .byte => 2,
-            .word => 3,
+    switch (width) {
+        .byte => {
+            if (byte_stream.len < 2) {
+                return Error.IncompleteProgram;
+            }
+            return Instruction{
+                .length = 2,
+                .type = instruction_type,
+                .dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) },
+                .src = .{ .immediate_byte = byte_stream[1] },
+            };
         },
-        .type = instruction_type,
-        .dst = undefined,
-        .src = undefined,
-    };
-
-    if (byte_stream.len < instruction.length) {
-        return Error.IncompleteProgram;
+        .word => {
+            if (byte_stream.len < 3) {
+                return Error.IncompleteProgram;
+            }
+            return Instruction{
+                .length = 3,
+                .type = instruction_type,
+                .dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) },
+                .src = .{ .immediate_word = make16(byte_stream[1], byte_stream[2]) },
+            };
+        },
     }
-
-    instruction.dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) };
-
-    instruction.src = .{
-        .immediate = .{
-            .value = switch (width) {
-                .byte => byte_stream[1],
-                .word => make16(byte_stream[1], byte_stream[2]),
-            },
-            .width = width,
-        },
-    };
-
-    return instruction;
 }
 
 fn decodeMemImmediate(
@@ -652,12 +632,10 @@ fn decodeMemImmediate(
         instruction.dst = mod_operand.operand;
     }
 
-    {
-        const immediate = try getImmediateOperand(width, byte_stream[instruction.length..]);
+    const immediate_operand = try getImmediateOperand(width, byte_stream[instruction.length..]);
 
-        instruction.length += immediate.length;
-        instruction.src = .{ .immediate = immediate.operand };
-    }
+    instruction.length += immediate_operand.length;
+    instruction.src = immediate_operand.operand;
 
     return instruction;
 }
@@ -709,35 +687,14 @@ fn decodeAccImmediate(
     immediate_width: OperandWidth,
     byte_stream: []const u8,
 ) !Instruction {
-    var instruction = Instruction{
-        .length = undefined,
+    const immediate_decode = try getImmediateOperand(immediate_width, byte_stream[1..]);
+
+    return Instruction{
+        .length = immediate_decode.length + 1,
         .type = instruction_type,
         .dst = .{ .register = accumulator },
-        .src = .{ .immediate = .{
-            .value = undefined,
-            .width = immediate_width,
-        } },
+        .src = immediate_decode.operand,
     };
-
-    switch (immediate_width) {
-        .byte => {
-            if (byte_stream.len < 2) {
-                return Error.IncompleteProgram;
-            }
-            instruction.length = 2;
-            instruction.src.?.immediate.value = byte_stream[1];
-        },
-        .word => {
-            if (byte_stream.len < 3) {
-                return Error.IncompleteProgram;
-            }
-
-            instruction.length = 3;
-            instruction.src.?.immediate.value = make16(byte_stream[1], byte_stream[2]);
-        },
-    }
-
-    return instruction;
 }
 
 fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instruction {
@@ -765,7 +722,7 @@ fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instructio
             7 => .cmp,
         },
         .dst = mod_operand.operand,
-        .src = .{ .immediate = immediate.operand },
+        .src = immediate.operand,
     };
 }
 
@@ -776,12 +733,9 @@ fn decodeOpRmExtended(width: OperandWidth, byte_stream: []const u8) !Instruction
 
     const mod_byte = parseModByte(byte_stream[1]);
     const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
-    const immediate_value = switch (width) {
-        .byte => @as(u16, byte_stream[2 + mod_operand.length]),
-        .word => extend8(byte_stream[2 + mod_operand.length]),
-    };
 
     return Instruction{
+        // byte0 + mod_byte + mod_operand + signed_byte
         .length = 3 + mod_operand.length,
         .type = switch (mod_byte.a) {
             0 => .add,
@@ -794,7 +748,10 @@ fn decodeOpRmExtended(width: OperandWidth, byte_stream: []const u8) !Instruction
             7 => .cmp,
         },
         .dst = mod_operand.operand,
-        .src = .{ .immediate = .{ .value = immediate_value, .width = width } },
+        .src = switch (width) {
+            .byte => .{ .immediate_byte = byte_stream[2 + mod_operand.length] },
+            .word => .{ .immediate_word = extend8(byte_stream[2 + mod_operand.length]) },
+        },
     };
 }
 
@@ -965,10 +922,10 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
         return instruction;
     }
 
-    const immediate_operand = try getImmediateOperand(width, byte_stream[instruction.length..]);
+    const immediate_decode = try getImmediateOperand(width, byte_stream[instruction.length..]);
 
-    instruction.length += immediate_operand.length;
-    instruction.src = .{ .immediate = immediate_operand.operand };
+    instruction.length += immediate_decode.length;
+    instruction.src = immediate_decode.operand;
     return instruction;
 }
 
@@ -998,7 +955,7 @@ fn decodeShift(
         },
         .dst = mod_operand.operand,
         .src = switch (src_operand) {
-            .one => .{ .immediate = .{ .value = 1, .width = null } },
+            .one => .one,
             .cl => .{ .register = .cl },
         },
     };
@@ -1015,10 +972,7 @@ fn decodeRetImmediate(kind: enum { intrasegment, intersegment }, byte_stream: []
             .intrasegment => .ret,
             .intersegment => .retf,
         },
-        .dst = .{ .immediate = .{
-            .value = make16(byte_stream[1], byte_stream[2]),
-            .width = .word,
-        } },
+        .dst = .{ .immediate_word = make16(byte_stream[1], byte_stream[2]) },
         .src = null,
     };
 }
@@ -1031,10 +985,7 @@ fn decodeIntImmediate(byte_stream: []const u8) !Instruction {
     return Instruction{
         .length = 2,
         .type = .int,
-        .dst = .{ .immediate = .{
-            .value = byte_stream[1],
-            .width = .byte,
-        } },
+        .dst = .{ .immediate_byte = byte_stream[1] },
         .src = null,
     };
 }
@@ -1644,33 +1595,31 @@ test "listing_0045_simulate" {
     try std.testing.expectEqualSlices(u16, &machine.segment_registers, &expected_segment_registers);
 }
 
-
-
 test "sub_simulate" {
     const program = [_]Instruction{
         .{
             .length = 0,
             .type = .mov,
             .dst = .{ .register = .ax },
-            .src = .{ .immediate = .{ .value = 0xfedc, .width = .word } },
+            .src = .{ .immediate_word = 0xfedc },
         },
         .{
             .length = 0,
             .type = .sub,
             .dst = .{ .register = .ax },
-            .src = .{ .immediate = .{ .value = 0x7654, .width = .word } },
+            .src = .{ .immediate_word = 0x7654 },
         },
         .{
             .length = 0,
             .type = .sub,
             .dst = .{ .register = .al },
-            .src = .{ .immediate = .{ .value = 0x67, .width = .byte } },
+            .src = .{ .immediate_byte = 0x67 },
         },
         .{
             .length = 0,
             .type = .sub,
             .dst = .{ .register = .ah },
-            .src = .{ .immediate = .{ .value = 0x45, .width = .byte } },
+            .src = .{ .immediate_byte = 0x45 },
         },
     };
 
