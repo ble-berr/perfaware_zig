@@ -1532,7 +1532,7 @@ test "illegal_0f" {
             return err;
         }
     };
-    try std.testing.expect(false);
+    return error.TestFailure;
 }
 
 fn simulate_test_program(program_file_path: []const u8) !void {
@@ -1567,7 +1567,7 @@ test "listing_0044_simulate" {
         0x0004, // di
     };
 
-    try std.testing.expectEqualSlices(u16, &machine.word_registers, &expected_registers);
+    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.word_registers);
 }
 
 test "listing_0045_simulate" {
@@ -1591,8 +1591,8 @@ test "listing_0045_simulate" {
         0x3344, // ds
     };
 
-    try std.testing.expectEqualSlices(u16, &machine.word_registers, &expected_registers);
-    try std.testing.expectEqualSlices(u16, &machine.segment_registers, &expected_segment_registers);
+    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.word_registers);
+    try std.testing.expectEqualSlices(u16, &expected_segment_registers, &machine.segment_registers);
 }
 
 test "sub_simulate" {
@@ -1628,7 +1628,7 @@ test "sub_simulate" {
         try Emulator.processInstruction(instruction);
     }
 
-    try std.testing.expectEqual(machine.word_registers[0], 0x4321);
+    try std.testing.expectEqual(@as(u16, 0x4321), machine.word_registers[0]);
 }
 
 pub fn main() !void {
