@@ -1657,18 +1657,40 @@ test "listing_0045_simulate" {
     try std.testing.expectEqualSlices(u16, &machine.segment_registers, &expected_segment_registers);
 }
 
+
+
 test "sub_simulate" {
-    const program = [_]u8{
-        0xb8, 0xdc, 0xfe, // mov ax, 0xfedc
-        0x2d, 0x54, 0x76, // sub ax, 0x7654
-        0x2c, 0x67, // sub al, 0x67
-        0x80, 0xec, 0x45, // sub ah, 0x45
+    const program = [_]Instruction{
+        .{
+            .length = 0,
+            .type = .mov,
+            .dst = .{ .register = .ax },
+            .src = .{ .immediate = .{ .value = 0xfedc, .width = .word } },
+        },
+        .{
+            .length = 0,
+            .type = .sub,
+            .dst = .{ .register = .ax },
+            .src = .{ .immediate = .{ .value = 0x7654, .width = .word } },
+        },
+        .{
+            .length = 0,
+            .type = .sub,
+            .dst = .{ .register = .al },
+            .src = .{ .immediate = .{ .value = 0x67, .width = .byte } },
+        },
+        .{
+            .length = 0,
+            .type = .sub,
+            .dst = .{ .register = .ah },
+            .src = .{ .immediate = .{ .value = 0x45, .width = .byte } },
+        },
     };
-    var program_stream = std.io.FixedBufferStream([]const u8){ .buffer = &program, .pos = 0 };
 
-    var stderr = std.io.getStdErr();
-
-    try decodeProgram(program_stream.reader(), stderr.writer(), true);
+    machine.reset();
+    for (program) |instruction| {
+        try Emulator.processInstruction(instruction);
+    }
 
     try std.testing.expectEqual(machine.word_registers[0], 0x4321);
 }
