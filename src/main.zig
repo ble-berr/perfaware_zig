@@ -88,9 +88,46 @@ const Emulator = struct {
         }
     }
 
+    fn processSub(instruction: Instruction) !void {
+        const dst = try getDestination(instruction.dst.?);
+        const src = try getSource(instruction.src.?, @as(OperandWidth, dst));
+
+        // Output debug info
+        {
+            const dst_name: []const u8 = switch (instruction.dst.?) {
+                .register => |r| @tagName(r),
+                .segment => |s| @tagName(s),
+                else => unreachable,
+            };
+
+            const dst_val: u16 = switch (dst) {
+                .byte => |b| b.*,
+                .word => |w| w.*,
+            };
+            const src_val: u16 = switch (src) {
+                .byte => |b| b,
+                .word => |w| w,
+            };
+
+            std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, dst_val - src_val });
+        }
+
+        switch (dst) {
+            .byte => |dst_byte| switch (src) {
+                .byte => |src_byte| dst_byte.* -= src_byte,
+                .word => return Error.IllegalInstruction,
+            },
+            .word => |dst_word| switch (src) {
+                .byte => |src_byte| dst_word.* -= src_byte,
+                .word => |src_word| dst_word.* -= src_word,
+            },
+        }
+    }
+
     fn processInstruction(instruction: Instruction) !void {
         return switch (instruction.type) {
             .mov => processMov(instruction),
+            .sub => processSub(instruction),
             else => error.UnsupportedInstruction,
         };
     }
@@ -1618,6 +1655,22 @@ test "listing_0045_simulate" {
 
     try std.testing.expectEqualSlices(u16, &machine.word_registers, &expected_registers);
     try std.testing.expectEqualSlices(u16, &machine.segment_registers, &expected_segment_registers);
+}
+
+test "sub_simulate" {
+    const program = [_]u8{
+        0xb8, 0xdc, 0xfe, // mov ax, 0xfedc
+        0x2d, 0x54, 0x76, // sub ax, 0x7654
+        0x2c, 0x67, // sub al, 0x67
+        0x80, 0xec, 0x45, // sub ah, 0x45
+    };
+    var program_stream = std.io.FixedBufferStream([]const u8){ .buffer = &program, .pos = 0 };
+
+    var stderr = std.io.getStdErr();
+
+    try decodeProgram(program_stream.reader(), stderr.writer(), true);
+
+    try std.testing.expectEqual(machine.word_registers[0], 0x4321);
 }
 
 pub fn main() !void {
