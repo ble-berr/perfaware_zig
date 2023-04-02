@@ -1576,13 +1576,13 @@ test "listing_0047_decode" {
     try test_decode("course_material/perfaware/part1/listing_0047_challenge_flags.asm", .@"asm");
 }
 
-test "jumps" {
+test "jumps_decode" {
     try test_decode("testfiles/asm/jumps.asm", .@"asm");
 }
-test "hlt" {
+test "hlt_decode" {
     try test_decode("testfiles/bin/hlt", .bin);
 }
-test "string" {
+test "string_decode" {
     try test_decode("testfiles/bin/string", .bin);
 }
 
