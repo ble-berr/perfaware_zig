@@ -123,10 +123,47 @@ const Emulator = struct {
         }
     }
 
+    fn processAdd(instruction: Instruction) !void {
+        const dst = try getDestination(instruction.dst.?);
+        const src = try getSource(instruction.src.?);
+
+        // Output debug info
+        {
+            const dst_name: []const u8 = switch (instruction.dst.?) {
+                .register => |r| @tagName(r),
+                .segment => |s| @tagName(s),
+                else => unreachable,
+            };
+
+            const dst_val: u16 = switch (dst) {
+                .byte => |b| b.*,
+                .word => |w| w.*,
+            };
+            const src_val: u16 = switch (src) {
+                .byte => |b| b,
+                .word => |w| w,
+            };
+
+            std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, dst_val + src_val });
+        }
+
+        switch (dst) {
+            .byte => |dst_byte| switch (src) {
+                .byte => |src_byte| dst_byte.* += src_byte,
+                .word => return Error.IllegalInstruction,
+            },
+            .word => |dst_word| switch (src) {
+                .byte => |src_byte| dst_word.* += src_byte,
+                .word => |src_word| dst_word.* += src_word,
+            },
+        }
+    }
+
     fn processInstruction(instruction: Instruction) !void {
         return switch (instruction.type) {
             .mov => processMov(instruction),
             .sub => processSub(instruction),
+            .add => processAdd(instruction),
             else => error.UnsupportedInstruction,
         };
     }
@@ -1626,6 +1663,42 @@ test "sub_simulate" {
     }
 
     try std.testing.expectEqual(@as(u16, 0x4321), machine.word_registers[0]);
+}
+
+test "add_simulate" {
+    const program = [_]Instruction{
+        .{
+            .length = 0,
+            .type = .mov,
+            .dst = .{ .register = .ax },
+            .src = .{ .immediate_word = 0x4321 },
+        },
+        .{
+            .length = 0,
+            .type = .add,
+            .dst = .{ .register = .ax },
+            .src = .{ .immediate_word = 0x2008 },
+        },
+        .{
+            .length = 0,
+            .type = .add,
+            .dst = .{ .register = .al },
+            .src = .{ .immediate_byte = 0x60 },
+        },
+        .{
+            .length = 0,
+            .type = .add,
+            .dst = .{ .register = .ah },
+            .src = .{ .immediate_byte = 0x04 },
+        },
+    };
+
+    machine.reset();
+    for (program) |instruction| {
+        try Emulator.processInstruction(instruction);
+    }
+
+    try std.testing.expectEqual(@as(u16, 0x6789), machine.word_registers[0]);
 }
 
 pub fn main() !void {
