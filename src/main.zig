@@ -391,7 +391,8 @@ fn printOperand(
         // NOTE(benjamin): 'nasm' does not account for the instruction
         // length so we must add it here.
         .short_jump => |jump| try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2}),
-        .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump}),
+        // Hacky way to satisfy NASM, obviously assumes that we have only just decoded the instruction.
+        .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump + @intCast(i16, machine.instruction_pointer)}),
         .far_jump => |jump| try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip }),
         .segment => |segment| try writer.writeAll(@tagName(segment)),
         .one => try writer.writeAll("1"),
@@ -413,13 +414,21 @@ fn printInstruction(
 
     try writer.writeAll(@tagName(instruction.type));
 
-    if (instruction.dst) |dst| {
+    if (instruction.type == .out) {
         try writer.writeAll(" ");
-        try printOperand(dst, prefixes.segment, writer);
+        try printOperand(instruction.src.?, prefixes.segment, writer);
 
-        if (instruction.src) |src| {
-            try writer.writeAll(", ");
-            try printOperand(src, prefixes.segment, writer);
+        try writer.writeAll(", ");
+        try printOperand(instruction.dst.?, prefixes.segment, writer);
+    } else {
+        if (instruction.dst) |dst| {
+            try writer.writeAll(" ");
+            try printOperand(dst, prefixes.segment, writer);
+
+            if (instruction.src) |src| {
+                try writer.writeAll(", ");
+                try printOperand(src, prefixes.segment, writer);
+            }
         }
     }
 }
@@ -1366,18 +1375,6 @@ fn decodeProgram(reader: anytype, writer: anytype, emulate: bool) !void {
         } else return Error.IncompleteProgram;
 
         machine.instruction_pointer += instruction.length;
-
-        if (instruction.type == .out) {
-            std.mem.swap(?InstructionOperand, &instruction.src, &instruction.dst);
-        }
-        if (instruction.dst) |*dst| {
-            switch (dst.*) {
-                // TODO(benjamin): adding to the jump here is a hack for the
-                // assembly output and needs to be corrected.
-                .near_jump => |*jump| jump.* += @intCast(i16, machine.instruction_pointer),
-                else => {},
-            }
-        }
 
         if (emulate) {
             Emulator.processInstruction(instruction) catch |err| {
