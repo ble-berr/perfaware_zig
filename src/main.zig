@@ -132,7 +132,7 @@ const Emulator = struct {
     }
 
     fn dumpMemory(writer: anytype) !void {
-        try writer.writeAll("===== 8086 =====\n");
+        try writer.writeAll("===== sim8086 memdump =====\n");
         for (0..machine.word_registers.len) |i| {
             try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
                 @tagName(Register.fromInt(.word, @truncate(u3, i))),
@@ -146,7 +146,7 @@ const Emulator = struct {
                 machine.segment_registers[i],
             });
         }
-        try writer.writeAll("================\n");
+        try writer.writeAll("===========================\n");
     }
 };
 
