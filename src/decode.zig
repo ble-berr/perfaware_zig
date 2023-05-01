@@ -23,7 +23,7 @@ pub const Register = enum(u4) {
     si,
     di,
 
-    fn fromInt(width: OperandWidth, value: u3) Register {
+    pub fn fromInt(width: OperandWidth, value: u3) Register {
         return switch (width) {
             .byte => @intToEnum(Register, value),
             .word => @intToEnum(Register, @as(u4, value) | 8),
