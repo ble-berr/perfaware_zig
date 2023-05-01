@@ -91,6 +91,7 @@ fn processMov(instruction: Instruction) !void {
     }
 }
 
+// TODO(benjamin): overflow and auxiliary carry flags
 fn processSub(instruction: Instruction) !void {
     const dst = try getDestination(instruction.dst.?);
     const src = try getSource(instruction.src.?);
@@ -116,17 +117,38 @@ fn processSub(instruction: Instruction) !void {
     }
 
     switch (dst) {
-        .byte => |dst_byte| switch (src) {
-            .byte => |src_byte| dst_byte.* -= src_byte,
-            .word => return error.WordToByte,
+        .byte => |dst_byte| {
+            const src_byte = switch (src) {
+                .byte => |b| b,
+                .word => return error.WordToByte,
+            };
+
+            machine.flags.carry = (dst_byte.* < src_byte);
+
+            dst_byte.* -= src_byte;
+
+            machine.flags.zero = (dst_byte.* == 0);
+            machine.flags.sign = ((dst_byte.* & 0x80) != 0);
+            machine.flags.parity = ((@popCount(dst_byte.*) % 2) != 0);
         },
-        .word => |dst_word| switch (src) {
-            .byte => |src_byte| dst_word.* -= src_byte,
-            .word => |src_word| dst_word.* -= src_word,
+        .word => |dst_word| {
+            const src_word = switch (src) {
+                .byte => |b| @as(u16, b),
+                .word => |w| w,
+            };
+
+            machine.flags.carry = (dst_word.* < src_word);
+
+            dst_word.* -= src_word;
+
+            machine.flags.zero = (dst_word.* == 0);
+            machine.flags.sign = ((dst_word.* & 0x80) != 0);
+            machine.flags.parity = ((@popCount(dst_word.*) % 2) != 0);
         },
     }
 }
 
+// TODO(benjamin): overflow and auxiliary carry flags
 fn processAdd(instruction: Instruction) !void {
     const dst = try getDestination(instruction.dst.?);
     const src = try getSource(instruction.src.?);
@@ -152,13 +174,33 @@ fn processAdd(instruction: Instruction) !void {
     }
 
     switch (dst) {
-        .byte => |dst_byte| switch (src) {
-            .byte => |src_byte| dst_byte.* += src_byte,
-            .word => return error.WordToByte,
+        .byte => |dst_byte| {
+            const src_byte = switch (src) {
+                .byte => |b| b,
+                .word => return error.WordToByte,
+            };
+
+            machine.flags.carry = (dst_byte.* > src_byte);
+
+            dst_byte.* += src_byte;
+
+            machine.flags.zero = (dst_byte.* == 0);
+            machine.flags.sign = ((dst_byte.* & 0x80) != 0);
+            machine.flags.parity = ((@popCount(dst_byte.*) % 2) != 0);
         },
-        .word => |dst_word| switch (src) {
-            .byte => |src_byte| dst_word.* += src_byte,
-            .word => |src_word| dst_word.* += src_word,
+        .word => |dst_word| {
+            const src_word = switch (src) {
+                .byte => |b| @as(u16, b),
+                .word => |w| w,
+            };
+
+            machine.flags.carry = (dst_word.* > src_word);
+
+            dst_word.* += src_word;
+
+            machine.flags.zero = (dst_word.* == 0);
+            machine.flags.sign = ((dst_word.* & 0x8000) != 0);
+            machine.flags.parity = ((@popCount(dst_word.* & 0x00ff) % 2) != 0);
         },
     }
 }
@@ -172,22 +214,71 @@ fn processInstruction(instruction: Instruction) !void {
     };
 }
 
+fn dumpRegister(writer: anytype, register: decode.Register) !void {
+    try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
+        @tagName(register),
+        machine.word_registers[@truncate(u3, @enumToInt(register))],
+    });
+}
+
+fn dumpSegmentRegister(writer: anytype, register: decode.SegmentRegister) !void {
+    try std.fmt.format(
+        writer,
+        "{s}: 0x{x:0>4} ({1d})\n",
+        .{ @tagName(register), machine.segment_registers[@enumToInt(register)] },
+    );
+}
+
 fn dumpMemory(writer: anytype) !void {
-    try writer.writeAll("===== sim8086 memdump =====\n");
-    for (0..machine.word_registers.len) |i| {
-        try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-            @tagName(Register.fromInt(.word, @truncate(u3, i))),
-            machine.word_registers[i],
-        });
+    try writer.writeAll("===== 8086 memdump =====\n");
+
+    try writer.writeAll("-- Registers --\n");
+    try dumpRegister(writer, .ax);
+    try dumpRegister(writer, .bx);
+    try dumpRegister(writer, .cx);
+    try dumpRegister(writer, .dx);
+    try dumpRegister(writer, .sp);
+    try dumpRegister(writer, .bp);
+    try dumpRegister(writer, .si);
+    try dumpRegister(writer, .di);
+
+    try writer.writeAll("-- Flags --\n");
+    if (machine.flags.trap) {
+        try writer.writeAll("T");
     }
-    try writer.writeAll("---\n");
-    for (0..machine.segment_registers.len) |i| {
-        try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
-            @tagName(@intToEnum(SegmentRegister, i)),
-            machine.segment_registers[i],
-        });
+    if (machine.flags.direction) {
+        try writer.writeAll("D");
     }
-    try writer.writeAll("===========================\n");
+    if (machine.flags.interrupt_enable) {
+        try writer.writeAll("I");
+    }
+    if (machine.flags.overflow) {
+        try writer.writeAll("O");
+    }
+    if (machine.flags.sign) {
+        try writer.writeAll("S");
+    }
+    if (machine.flags.zero) {
+        try writer.writeAll("Z");
+    }
+    if (machine.flags.auxiliary_carry) {
+        try writer.writeAll("A");
+    }
+    if (machine.flags.parity) {
+        try writer.writeAll("P");
+    }
+    if (machine.flags.carry) {
+        try writer.writeAll("C");
+    }
+    try writer.writeAll("\n");
+
+    try writer.writeAll("-- Segment Registers --\n");
+    try dumpSegmentRegister(writer, .es);
+    try dumpSegmentRegister(writer, .cs);
+    try dumpSegmentRegister(writer, .ss);
+    try dumpSegmentRegister(writer, .ds);
+
+    try writer.writeAll("========================\n");
 }
 
 fn simulateProgram(reader: anytype) !void {

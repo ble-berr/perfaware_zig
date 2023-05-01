@@ -5,6 +5,8 @@ pub const OperandWidth = enum {
     word,
 };
 
+// NOTE(benjamin): values chosen to allow direct casting of 3 bit values in the
+// instruction stream when account for the width bit.
 pub const Register = enum(u4) {
     al,
     cl,
