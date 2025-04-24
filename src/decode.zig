@@ -950,8 +950,8 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         // from table 4-13 of the user's manual (9800722-03).
         0x84 => try decodeRegisterRM(.@"test", .to_rm, .byte, byte_stream),
         0x85 => try decodeRegisterRM(.@"test", .to_rm, .word, byte_stream),
-        0x86 => try decodeRegisterRM(.xchg, .from_rm, .byte, byte_stream),
-        0x87 => try decodeRegisterRM(.xchg, .from_rm, .word, byte_stream),
+        0x86 => try decodeRegisterRM(.xchg, .to_rm, .byte, byte_stream),
+        0x87 => try decodeRegisterRM(.xchg, .to_rm, .word, byte_stream),
 
         0x88 => try decodeRegisterRM(.mov, .to_rm, .byte, byte_stream),
         0x89 => try decodeRegisterRM(.mov, .to_rm, .word, byte_stream),
