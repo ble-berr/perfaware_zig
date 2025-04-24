@@ -27,7 +27,7 @@ fn getRegister(register: Register) Ptr {
         .bl => .{ .byte = &machine.byte_registers[6] },
         .bh => .{ .byte = &machine.byte_registers[7] },
         else => |r| .{
-            .word = &machine.word_registers[@truncate(u3, @enumToInt(r))],
+            .word = &machine.word_registers[@as(u3, @truncate(@intFromEnum(r)))],
         },
     };
 }
@@ -35,7 +35,7 @@ fn getRegister(register: Register) Ptr {
 fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
     return switch (dst_operand) {
         .register => |r| getRegister(r),
-        .segment => |sr| .{ .word = &machine.segment_registers[@enumToInt(sr)] },
+        .segment => |sr| .{ .word = &machine.segment_registers[@intFromEnum(sr)] },
         .immediate_byte, .immediate_word, .one => unreachable,
         else => error.UnsupportedDestination,
     };
@@ -47,7 +47,7 @@ fn getSource(src_operand: decode.InstructionOperand) !Value {
             .byte => |b| .{ .byte = b.* },
             .word => |w| .{ .word = w.* },
         },
-        .segment => |sr| .{ .word = machine.segment_registers[@enumToInt(sr)] },
+        .segment => |sr| .{ .word = machine.segment_registers[@intFromEnum(sr)] },
         .immediate_byte => |byte| .{ .byte = byte },
         .immediate_word => |word| .{ .word = word },
         .one => .{ .byte = 1 },
@@ -217,7 +217,7 @@ fn processInstruction(instruction: Instruction) !void {
 fn dumpRegister(writer: anytype, register: decode.Register) !void {
     try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
         @tagName(register),
-        machine.word_registers[@truncate(u3, @enumToInt(register))],
+        machine.word_registers[@as(u3, @truncate(@intFromEnum(register)))],
     });
 }
 
@@ -225,7 +225,7 @@ fn dumpSegmentRegister(writer: anytype, register: decode.SegmentRegister) !void 
     try std.fmt.format(
         writer,
         "{s}: 0x{x:0>4} ({1d})\n",
-        .{ @tagName(register), machine.segment_registers[@enumToInt(register)] },
+        .{ @tagName(register), machine.segment_registers[@intFromEnum(register)] },
     );
 }
 
@@ -286,7 +286,7 @@ fn simulateProgram(reader: anytype) !void {
 
     const program_len = try reader.readAll(machine.memory[0..]);
     const code_segment = blk: {
-        const code_segment_address = machine.segment_registers[@enumToInt(SegmentRegister.cs)];
+        const code_segment_address = machine.segment_registers[@intFromEnum(SegmentRegister.cs)];
         break :blk machine.memory[code_segment_address .. code_segment_address + 0xffff];
     };
 
@@ -298,9 +298,9 @@ fn simulateProgram(reader: anytype) !void {
             return;
         }
 
-        var window = code_segment[machine.instruction_pointer..];
+        const window = code_segment[machine.instruction_pointer..];
 
-        var decoded = try decode.decodeNext(window);
+        const decoded = try decode.decodeNext(window);
 
         machine.instruction_pointer += decoded.instruction.length;
 
@@ -322,7 +322,7 @@ fn simulate_test_program(program_file_path: []const u8) !void {
     }
 
     var program_file = blk: {
-        var cwd_path = try std.process.getCwdAlloc(std.testing.allocator);
+        const cwd_path = try std.process.getCwdAlloc(std.testing.allocator);
         defer std.testing.allocator.free(cwd_path);
         var cwd = try std.fs.openDirAbsolute(cwd_path, .{});
         defer cwd.close();

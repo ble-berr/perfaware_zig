@@ -34,7 +34,7 @@ fn printOperand(
                 if (ea.width) |w| @tagName(w) else "",
                 segmentPrefixMnemonic(segment_override),
                 @tagName(ea.base),
-                @bitCast(i16, ea.offset),
+                @as(i16, @bitCast(ea.offset)),
             },
         ),
         .immediate_byte => |byte| try std.fmt.format(writer, "byte {d}", .{byte}),
@@ -44,7 +44,7 @@ fn printOperand(
         .short_jump => |jump| try std.fmt.format(writer, "${d:1}", .{@as(i16, jump) + 2}),
         // NOTE(benjamin): Hacky way to satisfy NASM, obviously assumes that we
         // have only just decoded the instruction.
-        .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump + @intCast(i16, instruction_position)}),
+        .near_jump => |jump| try std.fmt.format(writer, "{d}", .{jump + @as(i16, @intCast(instruction_position))}),
         .far_jump => |jump| try std.fmt.format(writer, "{d}:{d}", .{ jump.sp, jump.ip }),
         .segment => |segment| try writer.writeAll(@tagName(segment)),
         .one => try writer.writeAll("1"),
@@ -92,7 +92,7 @@ pub fn disassembleProgram(writer: anytype, program: []const u8) !void {
     var pos: usize = 0;
     while (pos < program.len) {
         const window = program[pos..];
-        var decoded = try decode.decodeNext(window);
+        const decoded = try decode.decodeNext(window);
 
         pos += decoded.instruction.length;
 
@@ -125,7 +125,7 @@ fn test_decode(reference_file_path: []const u8, file_format: enum { @"asm", bin 
     var allocator = std.testing.allocator;
 
     var cwd = blk: {
-        var cwd_path = try std.process.getCwdAlloc(allocator);
+        const cwd_path = try std.process.getCwdAlloc(allocator);
         defer allocator.free(cwd_path);
         break :blk try std.fs.openDirAbsolute(cwd_path, .{});
     };

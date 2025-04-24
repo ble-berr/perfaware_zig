@@ -15,7 +15,7 @@ pub fn compile(
         output_file_path,
         input_file_path,
     };
-    var nasm = std.ChildProcess.init(argv[0..], allocator);
+    var nasm = std.process.Child.init(argv[0..], allocator);
 
     switch (try nasm.spawnAndWait()) {
         .Exited => |exit_code| if (exit_code != 0) return error.NasmError,

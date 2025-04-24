@@ -27,8 +27,8 @@ pub const Register = enum(u4) {
 
     pub fn fromInt(width: OperandWidth, value: u3) Register {
         return switch (width) {
-            .byte => @intToEnum(Register, value),
-            .word => @intToEnum(Register, @as(u4, value) | 8),
+            .byte => @enumFromInt(value),
+            .word => @enumFromInt(@as(u4, value) | 8),
         };
     }
 };
@@ -216,9 +216,9 @@ const ModByte = struct {
 
 fn parseModByte(mod_byte: u8) ModByte {
     return .{
-        .mod = @truncate(u2, (mod_byte & 0o300) >> 6),
-        .a = @truncate(u3, (mod_byte & 0o070) >> 3),
-        .b = @truncate(u3, (mod_byte & 0o007) >> 0),
+        .mod = @as(u2, @truncate((mod_byte & 0o300) >> 6)),
+        .a = @as(u3, @truncate((mod_byte & 0o070) >> 3)),
+        .b = @as(u3, @truncate((mod_byte & 0o007) >> 0)),
     };
 }
 
@@ -259,7 +259,7 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
                 .length = 0,
                 .operand = .{
                     .effective_address = .{
-                        .base = @intToEnum(EacBase, mod_byte.b),
+                        .base = @enumFromInt(mod_byte.b),
                         .offset = 0,
                         .width = width,
                     },
@@ -274,7 +274,7 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
                 .length = 1,
                 .operand = .{
                     .effective_address = .{
-                        .base = @intToEnum(EacBase, mod_byte.b),
+                        .base = @enumFromInt(mod_byte.b),
                         .offset = extend8(byte_stream[0]),
                         .width = width,
                     },
@@ -289,7 +289,7 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
                 .length = 2,
                 .operand = .{
                     .effective_address = .{
-                        .base = @intToEnum(EacBase, mod_byte.b),
+                        .base = @enumFromInt(mod_byte.b),
                         .offset = make16(byte_stream[0], byte_stream[1]),
                         .width = width,
                     },
@@ -374,7 +374,7 @@ fn decodeRegisterImmediate(
             return Instruction{
                 .length = 2,
                 .type = instruction_type,
-                .dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) },
+                .dst = .{ .register = @enumFromInt(byte_stream[0] & 0x0f) },
                 .src = .{ .immediate_byte = byte_stream[1] },
             };
         },
@@ -385,7 +385,7 @@ fn decodeRegisterImmediate(
             return Instruction{
                 .length = 3,
                 .type = instruction_type,
-                .dst = .{ .register = @intToEnum(Register, byte_stream[0] & 0x0f) },
+                .dst = .{ .register = @enumFromInt(byte_stream[0] & 0x0f) },
                 .src = .{ .immediate_word = make16(byte_stream[1], byte_stream[2]) },
             };
         },
@@ -410,7 +410,7 @@ fn decodeMemImmediate(
 
     {
         const mod_byte = parseModByte(byte_stream[1]);
-        var mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
+        const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
 
         instruction.length += mod_operand.length;
         instruction.dst = mod_operand.operand;
@@ -547,7 +547,7 @@ fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const 
     return Instruction{
         .length = 2,
         .type = instruction_type,
-        .dst = .{ .short_jump = @bitCast(i8, byte_stream[1]) },
+        .dst = .{ .short_jump = @as(i8, @bitCast(byte_stream[1])) },
         .src = null,
     };
 }
@@ -560,7 +560,7 @@ fn decodeNearLabelJump(instruction_type: InstructionType, byte_stream: []const u
     return Instruction{
         .length = 3,
         .type = instruction_type,
-        .dst = .{ .near_jump = @bitCast(i16, make16(byte_stream[1], byte_stream[2])) },
+        .dst = .{ .near_jump = @as(i16, @bitCast(make16(byte_stream[1], byte_stream[2]))) },
         .src = null,
     };
 }
@@ -574,7 +574,7 @@ fn decodeFarLabelJump(instruction_type: InstructionType, byte_stream: []const u8
         .length = 5,
         .type = instruction_type,
         .dst = .{ .far_jump = .{
-            .ip = @bitCast(i16, make16(byte_stream[1], byte_stream[2])),
+            .ip = @as(i16, @bitCast(make16(byte_stream[1], byte_stream[2]))),
             .sp = make16(byte_stream[3], byte_stream[4]),
         } },
         .src = null,
@@ -801,10 +801,10 @@ fn decodeSegmentRM(
     switch (direction) {
         .to_rm => {
             instruction.dst = mod_operand.operand;
-            instruction.src = .{ .segment = @intToEnum(SegmentRegister, mod_byte.a) };
+            instruction.src = .{ .segment = @enumFromInt(mod_byte.a) };
         },
         .from_rm => {
-            instruction.dst = .{ .segment = @intToEnum(SegmentRegister, mod_byte.a) };
+            instruction.dst = .{ .segment = @enumFromInt(mod_byte.a) };
             instruction.src = mod_operand.operand;
         },
     }
@@ -898,26 +898,26 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x40...0x47 => Instruction{
             .length = 1,
             .type = .inc,
-            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .dst = .{ .register = Register.fromInt(.word, @as(u3, @truncate(byte_stream[0]))) },
             .src = null,
         },
         0x48...0x4f => Instruction{
             .length = 1,
             .type = .dec,
-            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .dst = .{ .register = Register.fromInt(.word, @as(u3, @truncate(byte_stream[0]))) },
             .src = null,
         },
 
         0x50...0x57 => Instruction{
             .length = 1,
             .type = .push,
-            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .dst = .{ .register = Register.fromInt(.word, @as(u3, @truncate(byte_stream[0]))) },
             .src = null,
         },
         0x58...0x5f => Instruction{
             .length = 1,
             .type = .pop,
-            .dst = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .dst = .{ .register = Register.fromInt(.word, @as(u3, @truncate(byte_stream[0]))) },
             .src = null,
         },
 
@@ -969,7 +969,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
             .length = 1,
             .type = .xchg,
             .dst = .{ .register = .ax },
-            .src = .{ .register = Register.fromInt(.word, @truncate(u3, byte_stream[0])) },
+            .src = .{ .register = Register.fromInt(.word, @as(u3, @truncate(byte_stream[0]))) },
         },
 
         0x98 => Instruction{ .length = 1, .type = .cbw, .dst = null, .src = null },
