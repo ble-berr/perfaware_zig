@@ -47,12 +47,12 @@ pub const EacBase = enum {
 pub const EffectiveAddress = struct {
     base: EacBase,
     offset: u16,
-    width: ?OperandWidth,
+    width: OperandWidth,
 };
 
 pub const DirectAddress = struct {
     address: u16,
-    width: ?OperandWidth,
+    width: OperandWidth,
 };
 
 pub const SegmentRegister = enum(u2) {
@@ -73,8 +73,6 @@ pub const InstructionOperand = union(enum) {
     near_jump: i16,
     far_jump: struct { ip: i16, sp: u16 },
     segment: SegmentRegister,
-    // hack for nasm not accepting "byte 1" for shift operations
-    one: void,
 };
 
 pub const InstructionType = enum {
@@ -644,12 +642,8 @@ fn decodeAddressObject(
     };
 
     switch (inst.src) {
-        .register => inst.type = .illegal,
-        // workaround for nasm dissasembly output
-        .direct_address => |*da| da.*.width = null,
-        // workaround for nasm dissasembly output
-        .effective_address => |*ea| ea.*.width = null,
-        else => unreachable,
+        .direct_address, .effective_address => {},
+        else => inst.type = .illegal,
     }
 
     return inst;
@@ -740,7 +734,7 @@ fn decodeShift(
         },
         .dst = mod_operand.operand,
         .src = switch (src_operand) {
-            .one => .one,
+            .one => .{ .immediate_byte = 1 },
             .cl => .{ .register = .cl },
         },
     };

@@ -37,7 +37,7 @@ fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
         .none => unreachable,
         .register => |r| getRegister(r),
         .segment => |sr| .{ .word = &machine.segment_registers[@intFromEnum(sr)] },
-        .immediate_byte, .immediate_word, .one => unreachable,
+        .immediate_byte, .immediate_word => unreachable,
         else => error.UnsupportedInstruction,
     };
 }
@@ -52,7 +52,6 @@ fn getSource(src_operand: decode.InstructionOperand) !Value {
         .segment => |sr| .{ .word = machine.segment_registers[@intFromEnum(sr)] },
         .immediate_byte => |byte| .{ .byte = byte },
         .immediate_word => |word| .{ .word = word },
-        .one => .{ .byte = 1 },
         else => error.UnsupportedInstruction,
     };
 }
