@@ -17,6 +17,7 @@ fn printOperand(
     instruction_position: usize,
 ) !void {
     switch (operand) {
+        .none => {},
         .register => |register| try writer.writeAll(@tagName(register)),
         .direct_address => |direct_address| try std.fmt.format(
             writer,
@@ -73,19 +74,19 @@ fn printInstruction(
         // "out"
         .out => {
             try writer.writeAll(" ");
-            try printOperand(writer, instruction.src.?, prefixes.segment, 0);
+            try printOperand(writer, instruction.src, prefixes.segment, 0);
 
             try writer.writeAll(", ");
-            try printOperand(writer, instruction.dst.?, prefixes.segment, 0);
+            try printOperand(writer, instruction.dst, prefixes.segment, 0);
         },
         else => {
-            if (instruction.dst) |dst| {
+            if (instruction.dst != .none) {
                 try writer.writeAll(" ");
-                try printOperand(writer, dst, prefixes.segment, instruction_position);
+                try printOperand(writer, instruction.dst, prefixes.segment, instruction_position);
 
-                if (instruction.src) |src| {
+                if (instruction.src != .none) {
                     try writer.writeAll(", ");
-                    try printOperand(writer, src, prefixes.segment, instruction_position);
+                    try printOperand(writer, instruction.src, prefixes.segment, instruction_position);
                 }
             }
         }

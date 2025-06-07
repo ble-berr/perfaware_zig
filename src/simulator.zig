@@ -34,6 +34,7 @@ fn getRegister(register: Register) Ptr {
 
 fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
     return switch (dst_operand) {
+        .none => unreachable,
         .register => |r| getRegister(r),
         .segment => |sr| .{ .word = &machine.segment_registers[@intFromEnum(sr)] },
         .immediate_byte, .immediate_word, .one => unreachable,
@@ -43,6 +44,7 @@ fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
 
 fn getSource(src_operand: decode.InstructionOperand) !Value {
     return switch (src_operand) {
+        .none => unreachable,
         .register => |r| switch (getRegister(r)) {
             .byte => |b| .{ .byte = b.* },
             .word => |w| .{ .word = w.* },
@@ -56,12 +58,12 @@ fn getSource(src_operand: decode.InstructionOperand) !Value {
 }
 
 fn processMov(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst.?);
-    const src = try getSource(instruction.src.?);
+    const dst = try getDestination(instruction.dst);
+    const src = try getSource(instruction.src);
 
     // Output debug info
     {
-        const dst_name: []const u8 = switch (instruction.dst.?) {
+        const dst_name: []const u8 = switch (instruction.dst) {
             .register => |r| @tagName(r),
             .segment => |s| @tagName(s),
             else => unreachable,
@@ -93,12 +95,12 @@ fn processMov(instruction: Instruction) !void {
 
 // TODO(benjamin): overflow and auxiliary carry flags
 fn processSub(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst.?);
-    const src = try getSource(instruction.src.?);
+    const dst = try getDestination(instruction.dst);
+    const src = try getSource(instruction.src);
 
     // Output debug info
     {
-        const dst_name: []const u8 = switch (instruction.dst.?) {
+        const dst_name: []const u8 = switch (instruction.dst) {
             .register => |r| @tagName(r),
             .segment => |s| @tagName(s),
             else => unreachable,
@@ -150,12 +152,12 @@ fn processSub(instruction: Instruction) !void {
 
 // TODO(benjamin): overflow and auxiliary carry flags
 fn processAdd(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst.?);
-    const src = try getSource(instruction.src.?);
+    const dst = try getDestination(instruction.dst);
+    const src = try getSource(instruction.src);
 
     // Output debug info
     {
-        const dst_name: []const u8 = switch (instruction.dst.?) {
+        const dst_name: []const u8 = switch (instruction.dst) {
             .register => |r| @tagName(r),
             .segment => |s| @tagName(s),
             else => unreachable,
@@ -308,8 +310,8 @@ fn simulateProgram(reader: anytype) !void {
             std.debug.print("{s}: {s} {s} {s}\n", .{
                 @errorName(err),
                 @tagName(decoded.instruction.type),
-                if (decoded.instruction.dst) |dst| @tagName(dst) else "(null)",
-                if (decoded.instruction.src) |src| @tagName(src) else "(null)",
+                @tagName(decoded.instruction.dst),
+                @tagName(decoded.instruction.src),
             });
             return err;
         };
