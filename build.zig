@@ -2,20 +2,12 @@ const std = @import("std");
 
 fn addOutputProgram(
     b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.Mode,
-    name: []const u8,
-    root_source_file_path: []const u8,
+    comptime name: []const u8,
+    module: *std.Build.Module,
 ) void {
-    var step_name_buf: [256]u8 = undefined;
-    var step_desc_buf: [256]u8 = undefined;
     const exe = b.addExecutable(.{
         .name = name,
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = b.path(root_source_file_path),
-        .target = target,
-        .optimize = optimize,
+        .root_module = module,
     });
 
     // This declares intent for the executable to be installed into the
@@ -44,16 +36,14 @@ fn addOutputProgram(
     // and can be selected like this: `zig build run`
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step(
-        std.fmt.bufPrint(step_name_buf[0..], "run-{s}", .{name}) catch unreachable,
-        std.fmt.bufPrint(step_desc_buf[0..], "Run {s}", .{name}) catch unreachable,
+        std.fmt.comptimePrint("run-{s}", .{name}),
+        std.fmt.comptimePrint("Run {s}", .{name}),
     );
     run_step.dependOn(&run_cmd.step);
 
     // Creates a step for unit testing.
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path(root_source_file_path),
-        .target = target,
-        .optimize = optimize,
+        .root_module = module,
     });
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
@@ -62,8 +52,8 @@ fn addOutputProgram(
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step(
-        std.fmt.bufPrint(step_name_buf[0..], "test-{s}", .{name}) catch unreachable,
-        std.fmt.bufPrint(step_desc_buf[0..], "Run unit tests for {s}", .{name}) catch unreachable,
+        std.fmt.comptimePrint("test-{s}", .{name}),
+        std.fmt.comptimePrint("Run unit tests for {s}", .{name}),
     );
     test_step.dependOn(&run_unit_tests.step);
 }
@@ -81,8 +71,20 @@ pub fn build(b: *std.Build) void {
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
-    const optimize = b.standardOptimizeOption(.{});
+    //const optimize = b.standardOptimizeOption(.{});
 
-    addOutputProgram(b, target, optimize, "8086asm", "src/disassembler.zig");
-    addOutputProgram(b, target, optimize, "8086sim", "src/simulator.zig");
+    const disassembler_module = b.createModule(.{
+        .root_source_file = b.path("src/disassembler.zig"),
+        .target = target,
+        .optimize = .Debug,
+    });
+
+    const simulator_module = b.createModule(.{
+        .root_source_file = b.path("src/simulator.zig"),
+        .target = target,
+        .optimize = .Debug,
+    });
+
+    addOutputProgram(b, "8086asm", disassembler_module);
+    addOutputProgram(b, "8086sim", simulator_module);
 }
