@@ -301,16 +301,16 @@ fn simulateProgram(reader: anytype) !void {
 
         const window = code_segment[machine.instruction_pointer..];
 
-        const decoded = try decode.decodeNext(window);
+        const instruction = try decode.decodeNext(window);
 
-        machine.instruction_pointer += decoded.instruction.length;
+        machine.instruction_pointer += instruction.length;
 
-        processInstruction(decoded.instruction) catch |err| {
+        processInstruction(instruction) catch |err| {
             std.debug.print("{s}: {s} {s} {s}\n", .{
                 @errorName(err),
-                @tagName(decoded.instruction.type),
-                @tagName(decoded.instruction.dst),
-                @tagName(decoded.instruction.src),
+                @tagName(instruction.type),
+                @tagName(instruction.dst),
+                @tagName(instruction.src),
             });
             return err;
         };

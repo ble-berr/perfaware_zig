@@ -177,7 +177,14 @@ pub const InstructionType = enum {
     incomplete, // Valid instruction but too few bytes left in the program.
 };
 
+// NOTE(benjamin): still not clear on which prefixes can be combined, if any. A
+// first skim of the 8086 user's manual had me believe that only the latest
+// prefix would be in effect. Reading it again it seems to indicate that
+// interrupts will make the CPU forget about all prefixes but the last.
 pub const Instruction = struct {
+    lock: bool = false,
+    repeat: ?RepeatPrefix = null,
+    segment: ?SegmentRegister = null,
     length: u8,
     type: InstructionType,
     dst: InstructionOperand,
@@ -187,21 +194,6 @@ pub const Instruction = struct {
 pub const RepeatPrefix = enum {
     repz,
     repnz,
-};
-
-// NOTE(benjamin): still not clear on which prefixes can be combined, if any. A
-// first skim of the 8086 user's manual had me believe that only the latest
-// prefix would be in effect. Reading it again it seems to indicate that
-// interrupts will make the CPU forget about all prefixes but the last.
-pub const InstructionPrefixes = struct {
-    lock: bool,
-    repeat: ?RepeatPrefix,
-    segment: ?SegmentRegister,
-};
-
-pub const PrefixedInstruction = struct {
-    prefixes: InstructionPrefixes,
-    instruction: Instruction,
 };
 
 pub const Error = error{
@@ -807,17 +799,12 @@ fn decodeSegmentRM(
     return instruction;
 }
 
-fn decodeByte(byte_stream: []const u8) !union(enum) {
-    instruction: Instruction,
-    lock: void,
-    repeat: RepeatPrefix,
-    segment: SegmentRegister,
-} {
+fn decodeInstruction(byte_stream: []const u8) !Instruction {
     if (byte_stream.len < 1) {
         return Error.IncompleteProgram;
     }
 
-    const instruction: Instruction = switch (byte_stream[0]) {
+    return switch (byte_stream[0]) {
         0x00 => try decodeRegisterRM(.add, .to_rm, .byte, byte_stream),
         0x01 => try decodeRegisterRM(.add, .to_rm, .word, byte_stream),
         0x02 => try decodeRegisterRM(.add, .from_rm, .byte, byte_stream),
@@ -860,7 +847,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x23 => try decodeRegisterRM(.@"and", .from_rm, .word, byte_stream),
         0x24 => try decodeAccImmediate(.@"and", .al, .byte, byte_stream),
         0x25 => try decodeAccImmediate(.@"and", .ax, .word, byte_stream),
-        0x26 => return .{ .segment = .es },
+        0x26 => unreachable, // segment ES
         0x27 => Instruction{ .length = 1, .type = .daa, .dst = .none, .src = .none },
 
         0x28 => try decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
@@ -869,7 +856,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x2b => try decodeRegisterRM(.sub, .from_rm, .word, byte_stream),
         0x2c => try decodeAccImmediate(.sub, .al, .byte, byte_stream),
         0x2d => try decodeAccImmediate(.sub, .ax, .word, byte_stream),
-        0x2e => return .{ .segment = .cs },
+        0x2e => unreachable, // segment CS
         0x2f => Instruction{ .length = 1, .type = .das, .dst = .none, .src = .none },
 
         0x30 => try decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
@@ -878,7 +865,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x33 => try decodeRegisterRM(.xor, .from_rm, .word, byte_stream),
         0x34 => try decodeAccImmediate(.xor, .al, .byte, byte_stream),
         0x35 => try decodeAccImmediate(.xor, .ax, .word, byte_stream),
-        0x36 => return .{ .segment = .ss },
+        0x36 => unreachable, // segment SS
         0x37 => Instruction{ .length = 1, .type = .aaa, .dst = .none, .src = .none },
 
         0x38 => try decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
@@ -887,7 +874,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x3b => try decodeRegisterRM(.cmp, .from_rm, .word, byte_stream),
         0x3c => try decodeAccImmediate(.cmp, .al, .byte, byte_stream),
         0x3d => try decodeAccImmediate(.cmp, .ax, .word, byte_stream),
-        0x3e => return .{ .segment = .ds },
+        0x3e => unreachable, // segment DS
         0x3f => Instruction{ .length = 1, .type = .aas, .dst = .none, .src = .none },
 
         0x40...0x47 => Instruction{
@@ -1080,10 +1067,10 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
             .src = .{ .register = .dx },
         },
 
-        0xf0 => return .lock,
+        0xf0 => unreachable, // lock
         0xf1 => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
-        0xf2 => return .{ .repeat = .repnz },
-        0xf3 => return .{ .repeat = .repz },
+        0xf2 => unreachable, // repnz
+        0xf3 => unreachable, // repz
 
         0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = .none, .src = .none },
         0xf5 => Instruction{ .length = 1, .type = .cmc, .dst = .none, .src = .none },
@@ -1103,36 +1090,45 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         // 0xff is described as Group2 in the manual
         0xff => try decodeGroup2Word(byte_stream),
     };
-
-    return .{ .instruction = instruction };
 }
 
 test "illegal_0f" {
     const program: [1]u8 = .{0x0f};
-    const inst = try decodeNext(program[0..]);
-    try std.testing.expectEqual(inst.instruction.type, InstructionType.illegal);
+    const instruction = try decodeNext(program[0..]);
+    try std.testing.expectEqual(instruction.type, InstructionType.illegal);
 }
 
-pub fn decodeNext(byte_stream: []const u8) !PrefixedInstruction {
-    var prefixes = InstructionPrefixes{ .lock = false, .repeat = null, .segment = null };
+pub fn decodeNext(byte_stream: []const u8) !Instruction {
+    var lock: bool = false;
+    var repeat: ?RepeatPrefix = null;
+    var segment: ?SegmentRegister = null;
     // Shouldn't exceed 3
-    var prefix_count: u8 = 0;
+    var prefix_bytes: u8 = 0;
 
-    while (prefix_count < byte_stream.len) {
-        switch (try decodeByte(byte_stream[prefix_count..])) {
-            .lock => prefixes.lock = true,
-            .repeat => |val| prefixes.repeat = val,
-            .segment => |seg| prefixes.segment = seg,
-            .instruction => |*inst| {
-                var prefixed_instruction = PrefixedInstruction{
-                    .prefixes = prefixes,
-                    .instruction = inst.*,
-                };
-                prefixed_instruction.instruction.length += prefix_count;
-                return prefixed_instruction;
+    for (byte_stream, 0..) |b, i| {
+        switch (b) {
+            0x26 => segment = .es,
+            0x2e => segment = .cs,
+            0x36 => segment = .ss,
+            0x3e => segment = .ds,
+            0xf0 => lock = true,
+            0xf2 => repeat = .repnz,
+            0xf3 => repeat = .repz,
+            else => {
+                prefix_bytes = @intCast(i);
+                break;
             },
         }
-        prefix_count += 1;
+    } else {
+        return Error.IncompleteProgram;
     }
-    return Error.IncompleteProgram;
+
+    var instruction = try decodeInstruction(byte_stream[prefix_bytes..]);
+
+    instruction.lock = lock;
+    instruction.repeat = repeat;
+    instruction.segment = segment;
+    instruction.length += prefix_bytes;
+
+    return instruction;
 }

@@ -20,15 +20,15 @@ fn segmentPrefixMnemonic(opt_prefix: ?decode.SegmentRegister) []const u8 {
 
 // NOTE(benjamin): NASM seems to output something unexpected when the width is
 // specified for certain instructions?
-fn hide_address_width(instruction: decode.PrefixedInstruction) bool {
-    return switch (instruction.instruction.type) {
+fn hide_address_width(instruction: decode.Instruction) bool {
+    return switch (instruction.type) {
         .lea, .les, .lds => true,
         else => false,
     };
 }
 
-fn is_shift_instruction(instruction: decode.PrefixedInstruction) bool {
-    return switch (instruction.instruction.type) {
+fn is_shift_instruction(instruction: decode.Instruction) bool {
+    return switch (instruction.type) {
         .rol, .ror, .rcl, .rcr, .shl, .shr, .sar => true,
         else => false,
     };
@@ -36,7 +36,7 @@ fn is_shift_instruction(instruction: decode.PrefixedInstruction) bool {
 
 fn printOperand(
     writer: anytype,
-    instruction: decode.PrefixedInstruction,
+    instruction: decode.Instruction,
     operand: decode.InstructionOperand,
     instruction_position: usize,
 ) !void {
@@ -48,7 +48,7 @@ fn printOperand(
             "{s} {s}[{d}]",
             .{
                 if (hide_address_width(instruction)) "" else @tagName(direct_address.width),
-                segmentPrefixMnemonic(instruction.prefixes.segment),
+                segmentPrefixMnemonic(instruction.segment),
                 direct_address.address,
             },
         ),
@@ -57,7 +57,7 @@ fn printOperand(
             "{s} {s}[{s} {d:1}]",
             .{
                 if (hide_address_width(instruction)) "" else @tagName(ea.width),
-                segmentPrefixMnemonic(instruction.prefixes.segment),
+                segmentPrefixMnemonic(instruction.segment),
                 @tagName(ea.base),
                 @as(i16, @bitCast(ea.offset)),
             },
@@ -84,38 +84,38 @@ fn printOperand(
 
 fn printInstruction(
     writer: anytype,
-    instruction: decode.PrefixedInstruction,
+    instruction: decode.Instruction,
     instruction_position: usize,
 ) !void {
-    if (instruction.prefixes.lock) {
+    if (instruction.lock) {
         try writer.writeAll("lock ");
     }
 
-    if (instruction.prefixes.repeat) |repeat| {
+    if (instruction.repeat) |repeat| {
         try std.fmt.format(writer, "{s} ", .{@tagName(repeat)});
     }
 
-    try writer.writeAll(@tagName(instruction.instruction.type));
+    try writer.writeAll(@tagName(instruction.type));
 
-    switch (instruction.instruction.type) {
+    switch (instruction.type) {
         .illegal => {},
         // NOTE(benjamin): src and dst are inverted in the assembler output for
         // "out"
         .out => {
             try writer.writeAll(" ");
-            try printOperand(writer, instruction, instruction.instruction.src, 0);
+            try printOperand(writer, instruction, instruction.src, 0);
 
             try writer.writeAll(", ");
-            try printOperand(writer, instruction, instruction.instruction.dst, 0);
+            try printOperand(writer, instruction, instruction.dst, 0);
         },
         else => {
-            if (instruction.instruction.dst != .none) {
+            if (instruction.dst != .none) {
                 try writer.writeAll(" ");
-                try printOperand(writer, instruction, instruction.instruction.dst, instruction_position);
+                try printOperand(writer, instruction, instruction.dst, instruction_position);
 
-                if (instruction.instruction.src != .none) {
+                if (instruction.src != .none) {
                     try writer.writeAll(", ");
-                    try printOperand(writer, instruction, instruction.instruction.src, instruction_position);
+                    try printOperand(writer, instruction, instruction.src, instruction_position);
                 }
             }
         }
@@ -126,13 +126,13 @@ pub fn disassembleProgram(writer: anytype, program: []const u8) !void {
     var pos: usize = 0;
     while (pos < program.len) {
         const window = program[pos..];
-        const decoded = try decode.decodeNext(window);
+        const instruction = try decode.decodeNext(window);
 
-        pos += decoded.instruction.length;
+        pos += instruction.length;
 
-        try printInstruction(writer, decoded, pos);
+        try printInstruction(writer, instruction, pos);
         try writer.writeAll(" ;");
-        for (window[0..decoded.instruction.length]) |byte| {
+        for (window[0..instruction.length]) |byte| {
             try std.fmt.format(writer, " 0x{x:0>2}", .{byte});
         }
         try writer.writeAll("\n");
