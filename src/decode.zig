@@ -187,8 +187,8 @@ pub const Instruction = struct {
     segment: ?SegmentRegister = null,
     length: u8,
     type: InstructionType,
-    dst: InstructionOperand,
-    src: InstructionOperand,
+    dst: InstructionOperand = .none,
+    src: InstructionOperand = .none,
 };
 
 pub const RepeatPrefix = enum {
@@ -540,7 +540,6 @@ fn decodeShortLabelJump(instruction_type: InstructionType, byte_stream: []const 
         .length = 2,
         .type = instruction_type,
         .dst = .{ .short_jump = @bitCast(byte_stream[1]) },
-        .src = .none,
     };
 }
 
@@ -553,7 +552,6 @@ fn decodeNearLabelJump(instruction_type: InstructionType, byte_stream: []const u
         .length = 3,
         .type = instruction_type,
         .dst = .{ .near_jump = @bitCast(make16(byte_stream[1], byte_stream[2])) },
-        .src = .none,
     };
 }
 
@@ -569,7 +567,6 @@ fn decodeFarLabelJump(instruction_type: InstructionType, byte_stream: []const u8
             .ip = @bitCast(make16(byte_stream[1], byte_stream[2])),
             .sp = make16(byte_stream[3], byte_stream[4]),
         } },
-        .src = .none,
     };
 }
 
@@ -595,7 +592,6 @@ fn decodeGroup2Word(byte_stream: []const u8) !Instruction {
             7 => .illegal,
         },
         .dst = mod_operand.operand,
-        .src = .none,
     };
 }
 
@@ -611,7 +607,6 @@ fn decodePopRM16(byte_stream: []const u8) !Instruction {
         .length = 2 + mod_operand.length,
         .type = if (mod_byte.a == 0) .pop else .illegal,
         .dst = mod_operand.operand,
-        .src = .none,
     };
 }
 
@@ -658,7 +653,6 @@ fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
         .length = 2 + mod_operand.length,
         .type = instruction_type,
         .dst = mod_operand.operand,
-        .src = .none,
     };
 }
 
@@ -685,18 +679,14 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
         .length = 2 + mod_operand.length,
         .type = instruction_type,
         .dst = mod_operand.operand,
-        .src = undefined,
     };
 
-    if (instruction_type != .@"test") {
-        instruction.src = .none;
-        return instruction;
+    if (instruction_type == .@"test") {
+        const immediate_decode = try getImmediateOperand(width, byte_stream[instruction.length..]);
+        instruction.length += immediate_decode.length;
+        instruction.src = immediate_decode.operand;
     }
 
-    const immediate_decode = try getImmediateOperand(width, byte_stream[instruction.length..]);
-
-    instruction.length += immediate_decode.length;
-    instruction.src = immediate_decode.operand;
     return instruction;
 }
 
@@ -744,7 +734,6 @@ fn decodeRetImmediate(kind: enum { intrasegment, intersegment }, byte_stream: []
             .intersegment => .retf,
         },
         .dst = .{ .immediate_word = make16(byte_stream[1], byte_stream[2]) },
-        .src = .none,
     };
 }
 
@@ -757,7 +746,6 @@ fn decodeIntImmediate(byte_stream: []const u8) !Instruction {
         .length = 2,
         .type = .int,
         .dst = .{ .immediate_byte = byte_stream[1] },
-        .src = .none,
     };
 }
 
@@ -811,8 +799,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x03 => try decodeRegisterRM(.add, .from_rm, .word, byte_stream),
         0x04 => try decodeAccImmediate(.add, .al, .byte, byte_stream),
         0x05 => try decodeAccImmediate(.add, .ax, .word, byte_stream),
-        0x06 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .es }, .src = .none },
-        0x07 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .es }, .src = .none },
+        0x06 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .es } },
+        0x07 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .es } },
 
         0x08 => try decodeRegisterRM(.@"or", .to_rm, .byte, byte_stream),
         0x09 => try decodeRegisterRM(.@"or", .to_rm, .word, byte_stream),
@@ -820,8 +808,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x0b => try decodeRegisterRM(.@"or", .from_rm, .word, byte_stream),
         0x0c => try decodeAccImmediate(.@"or", .al, .byte, byte_stream),
         0x0d => try decodeAccImmediate(.@"or", .ax, .word, byte_stream),
-        0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs }, .src = .none },
-        0x0f => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
+        0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs } },
+        0x0f => Instruction{ .length = 1, .type = .illegal },
 
         0x10 => try decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
         0x11 => try decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
@@ -829,8 +817,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x13 => try decodeRegisterRM(.adc, .from_rm, .word, byte_stream),
         0x14 => try decodeAccImmediate(.adc, .al, .byte, byte_stream),
         0x15 => try decodeAccImmediate(.adc, .ax, .word, byte_stream),
-        0x16 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ss }, .src = .none },
-        0x17 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ss }, .src = .none },
+        0x16 => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ss } },
+        0x17 => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ss } },
 
         0x18 => try decodeRegisterRM(.sbb, .to_rm, .byte, byte_stream),
         0x19 => try decodeRegisterRM(.sbb, .to_rm, .word, byte_stream),
@@ -838,8 +826,8 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x1b => try decodeRegisterRM(.sbb, .from_rm, .word, byte_stream),
         0x1c => try decodeAccImmediate(.sbb, .al, .byte, byte_stream),
         0x1d => try decodeAccImmediate(.sbb, .ax, .word, byte_stream),
-        0x1e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ds }, .src = .none },
-        0x1f => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ds }, .src = .none },
+        0x1e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .ds } },
+        0x1f => Instruction{ .length = 1, .type = .pop, .dst = .{ .segment = .ds } },
 
         0x20 => try decodeRegisterRM(.@"and", .to_rm, .byte, byte_stream),
         0x21 => try decodeRegisterRM(.@"and", .to_rm, .word, byte_stream),
@@ -848,7 +836,7 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x24 => try decodeAccImmediate(.@"and", .al, .byte, byte_stream),
         0x25 => try decodeAccImmediate(.@"and", .ax, .word, byte_stream),
         0x26 => unreachable, // segment ES
-        0x27 => Instruction{ .length = 1, .type = .daa, .dst = .none, .src = .none },
+        0x27 => Instruction{ .length = 1, .type = .daa },
 
         0x28 => try decodeRegisterRM(.sub, .to_rm, .byte, byte_stream),
         0x29 => try decodeRegisterRM(.sub, .to_rm, .word, byte_stream),
@@ -857,7 +845,7 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x2c => try decodeAccImmediate(.sub, .al, .byte, byte_stream),
         0x2d => try decodeAccImmediate(.sub, .ax, .word, byte_stream),
         0x2e => unreachable, // segment CS
-        0x2f => Instruction{ .length = 1, .type = .das, .dst = .none, .src = .none },
+        0x2f => Instruction{ .length = 1, .type = .das },
 
         0x30 => try decodeRegisterRM(.xor, .to_rm, .byte, byte_stream),
         0x31 => try decodeRegisterRM(.xor, .to_rm, .word, byte_stream),
@@ -866,7 +854,7 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x34 => try decodeAccImmediate(.xor, .al, .byte, byte_stream),
         0x35 => try decodeAccImmediate(.xor, .ax, .word, byte_stream),
         0x36 => unreachable, // segment SS
-        0x37 => Instruction{ .length = 1, .type = .aaa, .dst = .none, .src = .none },
+        0x37 => Instruction{ .length = 1, .type = .aaa },
 
         0x38 => try decodeRegisterRM(.cmp, .to_rm, .byte, byte_stream),
         0x39 => try decodeRegisterRM(.cmp, .to_rm, .word, byte_stream),
@@ -875,35 +863,31 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0x3c => try decodeAccImmediate(.cmp, .al, .byte, byte_stream),
         0x3d => try decodeAccImmediate(.cmp, .ax, .word, byte_stream),
         0x3e => unreachable, // segment DS
-        0x3f => Instruction{ .length = 1, .type = .aas, .dst = .none, .src = .none },
+        0x3f => Instruction{ .length = 1, .type = .aas },
 
         0x40...0x47 => Instruction{
             .length = 1,
             .type = .inc,
             .dst = .{ .register = Register.fromInt(.word, @truncate(byte_stream[0])) },
-            .src = .none,
         },
         0x48...0x4f => Instruction{
             .length = 1,
             .type = .dec,
             .dst = .{ .register = Register.fromInt(.word, @truncate(byte_stream[0])) },
-            .src = .none,
         },
 
         0x50...0x57 => Instruction{
             .length = 1,
             .type = .push,
             .dst = .{ .register = Register.fromInt(.word, @truncate(byte_stream[0])) },
-            .src = .none,
         },
         0x58...0x5f => Instruction{
             .length = 1,
             .type = .pop,
             .dst = .{ .register = Register.fromInt(.word, @truncate(byte_stream[0])) },
-            .src = .none,
         },
 
-        0x60...0x6f => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
+        0x60...0x6f => Instruction{ .length = 1, .type = .illegal },
 
         0x70 => try decodeShortLabelJump(.jo, byte_stream),
         0x71 => try decodeShortLabelJump(.jno, byte_stream),
@@ -954,42 +938,42 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
             .src = .{ .register = Register.fromInt(.word, @truncate(byte_stream[0])) },
         },
 
-        0x98 => Instruction{ .length = 1, .type = .cbw, .dst = .none, .src = .none },
-        0x99 => Instruction{ .length = 1, .type = .cwd, .dst = .none, .src = .none },
+        0x98 => Instruction{ .length = 1, .type = .cbw },
+        0x99 => Instruction{ .length = 1, .type = .cwd },
         0x9a => try decodeFarLabelJump(.call, byte_stream),
-        0x9b => Instruction{ .length = 1, .type = .wait, .dst = .none, .src = .none },
-        0x9c => Instruction{ .length = 1, .type = .pushf, .dst = .none, .src = .none },
-        0x9d => Instruction{ .length = 1, .type = .popf, .dst = .none, .src = .none },
-        0x9e => Instruction{ .length = 1, .type = .sahf, .dst = .none, .src = .none },
-        0x9f => Instruction{ .length = 1, .type = .lahf, .dst = .none, .src = .none },
+        0x9b => Instruction{ .length = 1, .type = .wait },
+        0x9c => Instruction{ .length = 1, .type = .pushf },
+        0x9d => Instruction{ .length = 1, .type = .popf },
+        0x9e => Instruction{ .length = 1, .type = .sahf },
+        0x9f => Instruction{ .length = 1, .type = .lahf },
 
         0xa0 => try decodeMovAccMem(.to_acc, .byte, byte_stream),
         0xa1 => try decodeMovAccMem(.to_acc, .word, byte_stream),
         0xa2 => try decodeMovAccMem(.from_acc, .byte, byte_stream),
         0xa3 => try decodeMovAccMem(.from_acc, .word, byte_stream),
 
-        0xa4 => Instruction{ .length = 1, .type = .movsb, .dst = .none, .src = .none },
-        0xa5 => Instruction{ .length = 1, .type = .movsw, .dst = .none, .src = .none },
-        0xa6 => Instruction{ .length = 1, .type = .cmpsb, .dst = .none, .src = .none },
-        0xa7 => Instruction{ .length = 1, .type = .cmpsw, .dst = .none, .src = .none },
+        0xa4 => Instruction{ .length = 1, .type = .movsb },
+        0xa5 => Instruction{ .length = 1, .type = .movsw },
+        0xa6 => Instruction{ .length = 1, .type = .cmpsb },
+        0xa7 => Instruction{ .length = 1, .type = .cmpsw },
 
         0xa8 => try decodeAccImmediate(.@"test", .al, .byte, byte_stream),
         0xa9 => try decodeAccImmediate(.@"test", .ax, .word, byte_stream),
 
-        0xaa => Instruction{ .length = 1, .type = .stosb, .dst = .none, .src = .none },
-        0xab => Instruction{ .length = 1, .type = .stosw, .dst = .none, .src = .none },
-        0xac => Instruction{ .length = 1, .type = .lodsb, .dst = .none, .src = .none },
-        0xad => Instruction{ .length = 1, .type = .lodsw, .dst = .none, .src = .none },
-        0xae => Instruction{ .length = 1, .type = .scasb, .dst = .none, .src = .none },
-        0xaf => Instruction{ .length = 1, .type = .scasw, .dst = .none, .src = .none },
+        0xaa => Instruction{ .length = 1, .type = .stosb },
+        0xab => Instruction{ .length = 1, .type = .stosw },
+        0xac => Instruction{ .length = 1, .type = .lodsb },
+        0xad => Instruction{ .length = 1, .type = .lodsw },
+        0xae => Instruction{ .length = 1, .type = .scasb },
+        0xaf => Instruction{ .length = 1, .type = .scasw },
 
         0xb0...0xb7 => try decodeRegisterImmediate(.mov, .byte, byte_stream),
         0xb8...0xbf => try decodeRegisterImmediate(.mov, .word, byte_stream),
 
-        0xc0...0xc1 => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
+        0xc0...0xc1 => Instruction{ .length = 1, .type = .illegal },
 
         0xc2 => try decodeRetImmediate(.intrasegment, byte_stream),
-        0xc3 => Instruction{ .length = 1, .type = .ret, .dst = .none, .src = .none },
+        0xc3 => Instruction{ .length = 1, .type = .ret },
 
         0xc4 => try decodeAddressObject(.les, byte_stream),
         0xc5 => try decodeAddressObject(.lds, byte_stream),
@@ -997,21 +981,16 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xc6 => try decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => try decodeMemImmediate(.mov, .word, byte_stream),
 
-        0xc8...0xc9 => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
+        0xc8...0xc9 => Instruction{ .length = 1, .type = .illegal },
 
         0xca => try decodeRetImmediate(.intersegment, byte_stream),
-        0xcb => Instruction{ .length = 1, .type = .retf, .dst = .none, .src = .none },
+        0xcb => Instruction{ .length = 1, .type = .retf },
 
-        0xcc => Instruction{
-            .length = 1,
-            .type = .int3,
-            .dst = .none,
-            .src = .none,
-        },
+        0xcc => Instruction{ .length = 1, .type = .int3 },
         0xcd => try decodeIntImmediate(byte_stream),
 
-        0xce => Instruction{ .length = 1, .type = .into, .dst = .none, .src = .none },
-        0xcf => Instruction{ .length = 1, .type = .iret, .dst = .none, .src = .none },
+        0xce => Instruction{ .length = 1, .type = .into },
+        0xcf => Instruction{ .length = 1, .type = .iret },
 
         0xd0 => try decodeShift(.byte, .one, byte_stream),
         0xd1 => try decodeShift(.word, .one, byte_stream),
@@ -1019,11 +998,11 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         0xd3 => try decodeShift(.word, .cl, byte_stream),
 
         // TODO(benjamin): assert (byte_stream[1] == 0x0a) ?
-        0xd4 => Instruction{ .length = 2, .type = .aam, .dst = .none, .src = .none },
-        0xd5 => Instruction{ .length = 2, .type = .aad, .dst = .none, .src = .none },
+        0xd4 => Instruction{ .length = 2, .type = .aam },
+        0xd5 => Instruction{ .length = 2, .type = .aad },
 
-        0xd6 => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
-        0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = .none, .src = .none },
+        0xd6 => Instruction{ .length = 1, .type = .illegal },
+        0xd7 => Instruction{ .length = 1, .type = .xlat },
 
         // NOTE(benjamin): unsupported by nasm.
         0xd8...0xdf => return error.InstructionNotImplemented,
@@ -1068,22 +1047,22 @@ fn decodeInstruction(byte_stream: []const u8) !Instruction {
         },
 
         0xf0 => unreachable, // lock
-        0xf1 => Instruction{ .length = 1, .type = .illegal, .dst = .none, .src = .none },
+        0xf1 => Instruction{ .length = 1, .type = .illegal },
         0xf2 => unreachable, // repnz
         0xf3 => unreachable, // repz
 
-        0xf4 => Instruction{ .length = 1, .type = .hlt, .dst = .none, .src = .none },
-        0xf5 => Instruction{ .length = 1, .type = .cmc, .dst = .none, .src = .none },
+        0xf4 => Instruction{ .length = 1, .type = .hlt },
+        0xf5 => Instruction{ .length = 1, .type = .cmc },
 
         0xf6 => try decodeGroup1(.byte, byte_stream),
         0xf7 => try decodeGroup1(.word, byte_stream),
 
-        0xf8 => Instruction{ .length = 1, .type = .clc, .dst = .none, .src = .none },
-        0xf9 => Instruction{ .length = 1, .type = .stc, .dst = .none, .src = .none },
-        0xfa => Instruction{ .length = 1, .type = .cli, .dst = .none, .src = .none },
-        0xfb => Instruction{ .length = 1, .type = .sti, .dst = .none, .src = .none },
-        0xfc => Instruction{ .length = 1, .type = .cld, .dst = .none, .src = .none },
-        0xfd => Instruction{ .length = 1, .type = .std, .dst = .none, .src = .none },
+        0xf8 => Instruction{ .length = 1, .type = .clc },
+        0xf9 => Instruction{ .length = 1, .type = .stc },
+        0xfa => Instruction{ .length = 1, .type = .cli },
+        0xfb => Instruction{ .length = 1, .type = .sti },
+        0xfc => Instruction{ .length = 1, .type = .cld },
+        0xfd => Instruction{ .length = 1, .type = .std },
 
         0xfe => try decodeGroup2Byte(byte_stream),
 
