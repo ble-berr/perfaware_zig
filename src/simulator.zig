@@ -38,7 +38,7 @@ fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
         .register => |r| getRegister(r),
         .segment => |sr| .{ .word = &machine.segment_registers[@intFromEnum(sr)] },
         .immediate_byte, .immediate_word, .one => unreachable,
-        else => error.UnsupportedDestination,
+        else => error.UnsupportedInstruction,
     };
 }
 
