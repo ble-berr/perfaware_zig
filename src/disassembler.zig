@@ -110,11 +110,12 @@ pub fn disassembleProgram(writer: anytype, program: []const u8) !void {
     }
 }
 
+// NOTE(benjamin): Code segment is only 64KiB long. This should be more
+// than enough for the course so we'll ignore the possibility of not having
+// enough space.
+var program_buf = [_]u8{0} ** (64 * 1024);
+
 pub fn main() !void {
-    // NOTE(benjamin): Code segment is only 64KiB long. This should be more
-    // than enough for the course so we'll ignore the possibility of not having
-    // enough space.
-    var program_buf = [_]u8{0} ** (64 * 1024);
     const program_len = try std.io.getStdIn().readAll(program_buf[0..]);
 
     try disassembleProgram(std.io.getStdOut().writer(), program_buf[0..program_len]);
