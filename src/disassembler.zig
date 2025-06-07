@@ -67,22 +67,26 @@ fn printInstruction(
 
     try writer.writeAll(@tagName(instruction.type));
 
-    // NOTE(benjamin): src and dst are inverted in the assembler output for
-    // "out"
-    if (instruction.type == .out) {
-        try writer.writeAll(" ");
-        try printOperand(writer, instruction.src.?, prefixes.segment, 0);
-
-        try writer.writeAll(", ");
-        try printOperand(writer, instruction.dst.?, prefixes.segment, 0);
-    } else {
-        if (instruction.dst) |dst| {
+    switch (instruction.type) {
+        .illegal => {},
+        // NOTE(benjamin): src and dst are inverted in the assembler output for
+        // "out"
+        .out => {
             try writer.writeAll(" ");
-            try printOperand(writer, dst, prefixes.segment, instruction_position);
+            try printOperand(writer, instruction.src.?, prefixes.segment, 0);
 
-            if (instruction.src) |src| {
-                try writer.writeAll(", ");
-                try printOperand(writer, src, prefixes.segment, instruction_position);
+            try writer.writeAll(", ");
+            try printOperand(writer, instruction.dst.?, prefixes.segment, 0);
+        },
+        else => {
+            if (instruction.dst) |dst| {
+                try writer.writeAll(" ");
+                try printOperand(writer, dst, prefixes.segment, instruction_position);
+
+                if (instruction.src) |src| {
+                    try writer.writeAll(", ");
+                    try printOperand(writer, src, prefixes.segment, instruction_position);
+                }
             }
         }
     }

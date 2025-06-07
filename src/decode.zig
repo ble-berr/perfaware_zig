@@ -174,6 +174,8 @@ pub const InstructionType = enum {
     stosw,
     lodsw,
     scasw,
+    illegal,
+    incomplete, // Valid instruction but too few bytes left in the program.
 };
 
 pub const Instruction = struct {
@@ -204,7 +206,6 @@ pub const PrefixedInstruction = struct {
 };
 
 pub const Error = error{
-    IllegalInstruction,
     IncompleteProgram,
 };
 
@@ -600,7 +601,7 @@ fn decodeGroup2Word(byte_stream: []const u8) !Instruction {
             4 => .jmp,
             5 => .@"jmp far",
             6 => .push,
-            7 => return Error.IllegalInstruction,
+            7 => .illegal,
         },
         .dst = mod_operand.operand,
         .src = null,
@@ -613,15 +614,11 @@ fn decodePopRM16(byte_stream: []const u8) !Instruction {
     }
 
     const mod_byte = parseModByte(byte_stream[1]);
-    if (mod_byte.a != 0) {
-        return Error.IllegalInstruction;
-    }
-
     const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
 
     return Instruction{
         .length = 2 + mod_operand.length,
-        .type = .pop,
+        .type = if (mod_byte.a == 0) .pop else .illegal,
         .dst = mod_operand.operand,
         .src = null,
     };
@@ -636,9 +633,17 @@ fn decodeAddressObject(
     }
 
     const mod_byte = parseModByte(byte_stream[1]);
-    var mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
-    switch (mod_operand.operand) {
-        .register => return Error.IllegalInstruction,
+    const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
+
+     var inst = Instruction{
+        .length = 2 + mod_operand.length,
+        .type = instruction_type,
+        .dst = .{ .register = Register.fromInt(.word, mod_byte.a) },
+        .src = mod_operand.operand,
+    };
+
+    switch (inst.src.?) {
+        .register => inst.type = .illegal,
         // workaround for nasm dissasembly output
         .direct_address => |*da| da.*.width = null,
         // workaround for nasm dissasembly output
@@ -646,12 +651,7 @@ fn decodeAddressObject(
         else => unreachable,
     }
 
-    return Instruction{
-        .length = 2 + mod_operand.length,
-        .type = instruction_type,
-        .dst = .{ .register = Register.fromInt(.word, mod_byte.a) },
-        .src = mod_operand.operand,
-    };
+    return inst;
 }
 
 fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
@@ -663,7 +663,7 @@ fn decodeGroup2Byte(byte_stream: []const u8) !Instruction {
     const instruction_type: InstructionType = switch (mod_byte.a) {
         0 => .inc,
         1 => .dec,
-        2...7 => return Error.IllegalInstruction,
+        2...7 => .illegal,
     };
     const mod_operand = try getModOperand(mod_byte, .byte, byte_stream[2..]);
 
@@ -685,7 +685,7 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
 
     const instruction_type: InstructionType = switch (mod_byte.a) {
         0 => .@"test",
-        1 => return Error.IllegalInstruction,
+        1 => .illegal,
         2 => .not,
         3 => .neg,
         4 => .mul,
@@ -734,7 +734,7 @@ fn decodeShift(
             3 => .rcr,
             4 => .shl,
             5 => .shr,
-            6 => return Error.IllegalInstruction,
+            6 => .illegal,
             7 => .sar,
         },
         .dst = mod_operand.operand,
@@ -792,7 +792,7 @@ fn decodeSegmentRM(
 
     const mod_byte = parseModByte(byte_stream[1]);
     if (4 <= mod_byte.a) {
-        return Error.IllegalInstruction;
+        instruction.type = .illegal;
     }
     const mod_operand = try getModOperand(mod_byte, .word, byte_stream[2..]);
 
@@ -839,7 +839,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0x0c => try decodeAccImmediate(.@"or", .al, .byte, byte_stream),
         0x0d => try decodeAccImmediate(.@"or", .ax, .word, byte_stream),
         0x0e => Instruction{ .length = 1, .type = .push, .dst = .{ .segment = .cs }, .src = null },
-        0x0f => return Error.IllegalInstruction,
+        0x0f => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
 
         0x10 => try decodeRegisterRM(.adc, .to_rm, .byte, byte_stream),
         0x11 => try decodeRegisterRM(.adc, .to_rm, .word, byte_stream),
@@ -921,7 +921,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
             .src = null,
         },
 
-        0x60...0x6f => return Error.IllegalInstruction,
+        0x60...0x6f => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
 
         0x70 => try decodeShortLabelJump(.jo, byte_stream),
         0x71 => try decodeShortLabelJump(.jno, byte_stream),
@@ -1004,7 +1004,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0xb0...0xb7 => try decodeRegisterImmediate(.mov, .byte, byte_stream),
         0xb8...0xbf => try decodeRegisterImmediate(.mov, .word, byte_stream),
 
-        0xc0...0xc1 => return Error.IllegalInstruction,
+        0xc0...0xc1 => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
 
         0xc2 => try decodeRetImmediate(.intrasegment, byte_stream),
         0xc3 => Instruction{ .length = 1, .type = .ret, .dst = null, .src = null },
@@ -1015,7 +1015,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0xc6 => try decodeMemImmediate(.mov, .byte, byte_stream),
         0xc7 => try decodeMemImmediate(.mov, .word, byte_stream),
 
-        0xc8...0xc9 => return Error.IllegalInstruction,
+        0xc8...0xc9 => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
 
         0xca => try decodeRetImmediate(.intersegment, byte_stream),
         0xcb => Instruction{ .length = 1, .type = .retf, .dst = null, .src = null },
@@ -1040,7 +1040,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         0xd4 => Instruction{ .length = 2, .type = .aam, .dst = null, .src = null },
         0xd5 => Instruction{ .length = 2, .type = .aad, .dst = null, .src = null },
 
-        0xd6 => return Error.IllegalInstruction,
+        0xd6 => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
         0xd7 => Instruction{ .length = 1, .type = .xlat, .dst = null, .src = null },
 
         // NOTE(benjamin): unsupported by nasm.
@@ -1086,7 +1086,7 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
         },
 
         0xf0 => return .lock,
-        0xf1 => return Error.IllegalInstruction,
+        0xf1 => Instruction{ .length = 1, .type = .illegal, .dst = null, .src = null },
         0xf2 => return .{ .repeat = .repnz },
         0xf3 => return .{ .repeat = .repz },
 
@@ -1114,12 +1114,8 @@ fn decodeByte(byte_stream: []const u8) !union(enum) {
 
 test "illegal_0f" {
     const program: [1]u8 = .{0x0f};
-    _ = decodeNext(program[0..]) catch |err| {
-        if (err == Error.IllegalInstruction) {
-            return;
-        }
-    };
-    return error.TestFailure;
+    const inst = try decodeNext(program[0..]);
+    try std.testing.expectEqual(inst.instruction.type, InstructionType.illegal);
 }
 
 pub fn decodeNext(byte_stream: []const u8) !PrefixedInstruction {
