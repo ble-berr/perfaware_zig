@@ -374,7 +374,7 @@ fn decodeRegisterImmediate(
             return Instruction{
                 .length = 2,
                 .type = instruction_type,
-                .dst = .{ .register = @enumFromInt(byte_stream[0] & 0x0f) },
+                .dst = .{ .register = @enumFromInt(@as(u4, @truncate(byte_stream[0]))) },
                 .src = .{ .immediate_byte = byte_stream[1] },
             };
         },
@@ -385,7 +385,7 @@ fn decodeRegisterImmediate(
             return Instruction{
                 .length = 3,
                 .type = instruction_type,
-                .dst = .{ .register = @enumFromInt(byte_stream[0] & 0x0f) },
+                .dst = .{ .register = @enumFromInt(@as(u4, @truncate(byte_stream[0]))) },
                 .src = .{ .immediate_word = make16(byte_stream[1], byte_stream[2]) },
             };
         },
