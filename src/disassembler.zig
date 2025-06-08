@@ -82,7 +82,7 @@ fn printOperand(
     }
 }
 
-fn printInstruction(
+pub fn printInstruction(
     writer: anytype,
     instruction: decode.Instruction,
     instruction_position: usize,

@@ -1,8 +1,13 @@
 const decode = @import("decode.zig");
 const std = @import("std");
+const dis = @import("disassembler.zig");
+
+const printInstruction = dis.printInstruction;
 
 const Instruction = decode.Instruction;
 const SegmentRegister = decode.SegmentRegister;
+
+var stdout: std.fs.File.Writer = undefined;
 
 const Machine = struct {
     const Flags = struct {
@@ -109,9 +114,83 @@ fn valueFromOperand(op: decode.InstructionOperand) u16 {
     };
 }
 
+fn printChange(op: decode.InstructionOperand, before: u16, after: u16) !void {
+    var name: []const u8 = undefined;
+    var width: decode.OperandWidth = undefined;
+
+    switch (op) {
+        .register => |register| switch (register) {
+            .al, .ah, .cl, .ch, .dl, .dh, .bl, .bh => |r| {
+                name = @tagName(r);
+                width = .byte;
+            },
+            .ax, .cx, .dx, .bx, .sp, .bp, .si, .di => |r| {
+                name = @tagName(r);
+                width = .word;
+            }
+        },
+        .segment => |sr| {
+            name = @tagName(sr);
+            width = .word;
+        },
+        else => unreachable, // TODO
+    }
+
+    switch (width) {
+        .byte => try std.fmt.format(stdout, "{s}:{x:0>2}->{x:0>2}", .{
+            name,
+            @as(u8, @truncate(before)),
+            @as(u8, @truncate(after)),
+        }),
+        .word => try std.fmt.format(stdout, "{s}:{x:0>4}->{x:0>4}", .{
+            name, before, after,
+        }),
+    }
+}
+
+fn printFlags(flags: Machine.Flags) !void {
+    if (flags.trap) {
+        try stdout.writeAll("T");
+    }
+    if (flags.direction) {
+        try stdout.writeAll("D");
+    }
+    if (flags.interrupt_enable) {
+        try stdout.writeAll("I");
+    }
+    if (flags.overflow) {
+        try stdout.writeAll("O");
+    }
+    if (flags.sign) {
+        try stdout.writeAll("S");
+    }
+    if (flags.zero) {
+        try stdout.writeAll("Z");
+    }
+    if (flags.auxiliary_carry) {
+        try stdout.writeAll("A");
+    }
+    if (flags.parity) {
+        try stdout.writeAll("P");
+    }
+    if (flags.carry) {
+        try stdout.writeAll("C");
+    }
+}
+
+fn printFlagChange(before: Machine.Flags, after: Machine.Flags) !void {
+    try stdout.writeAll(" flags:");
+    try printFlags(before);
+    try stdout.writeAll("->");
+    try printFlags(after);
+}
+
 fn processMov(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const src = valueFromOperand(instruction.src);
+
+    try stdout.writeAll(" ; ");
+    try printChange(instruction.dst, dst.value(), src);
 
     switch (dst) {
         .byte => |p| p.* = @truncate(src),
@@ -124,6 +203,11 @@ fn processSub(instruction: Instruction) !void {
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
     const result = @as(u32, dst_val) -% src;
+
+    try stdout.writeAll(" ; ");
+    try printChange(instruction.dst, dst.value(), src);
+
+    const prev_flags = machine.flags;
 
     switch (dst) {
         .byte => |ptr| {
@@ -147,6 +231,8 @@ fn processSub(instruction: Instruction) !void {
             machine.flags.overflow = (result > 0xffff);
         },
     }
+
+    try printFlagChange(prev_flags, machine.flags);
 }
 
 fn processAdd(instruction: Instruction) !void {
@@ -180,12 +266,14 @@ fn processAdd(instruction: Instruction) !void {
 }
 
 fn processInstruction(instruction: Instruction) !void {
-    return switch (instruction.type) {
-        .mov => processMov(instruction),
-        .sub => processSub(instruction),
-        .add => processAdd(instruction),
-        else => error.UnsupportedInstruction,
-    };
+    try printInstruction(stdout, instruction, machine.instruction_pointer);
+    switch (instruction.type) {
+        .mov => try processMov(instruction),
+        .sub => try processSub(instruction),
+        .add => try processAdd(instruction),
+        else => return error.UnsupportedInstruction,
+    }
+    try stdout.writeAll("\n");
 }
 
 fn dumpRegister(writer: anytype, register: decode.Register) !void {
@@ -216,33 +304,7 @@ fn dumpMemory(writer: anytype) !void {
     try dumpRegister(writer, .di);
 
     try writer.writeAll("-- Flags --\n");
-    if (machine.flags.trap) {
-        try writer.writeAll("T");
-    }
-    if (machine.flags.direction) {
-        try writer.writeAll("D");
-    }
-    if (machine.flags.interrupt_enable) {
-        try writer.writeAll("I");
-    }
-    if (machine.flags.overflow) {
-        try writer.writeAll("O");
-    }
-    if (machine.flags.sign) {
-        try writer.writeAll("S");
-    }
-    if (machine.flags.zero) {
-        try writer.writeAll("Z");
-    }
-    if (machine.flags.auxiliary_carry) {
-        try writer.writeAll("A");
-    }
-    if (machine.flags.parity) {
-        try writer.writeAll("P");
-    }
-    if (machine.flags.carry) {
-        try writer.writeAll("C");
-    }
+    try printFlags(machine.flags);
     try writer.writeAll("\n");
 
     try writer.writeAll("-- Segment Registers --\n");
@@ -254,10 +316,10 @@ fn dumpMemory(writer: anytype) !void {
     try writer.writeAll("========================\n");
 }
 
-fn simulateProgram(reader: anytype) !void {
+fn runProgram(program_reader: anytype) !void {
     machine.reset();
 
-    const program_len = try reader.readAll(machine.memory[0..]);
+    const program_len = try program_reader.readAll(machine.memory[0..]);
     const code_segment_start = machine.segment_registers[@intFromEnum(SegmentRegister.cs)];
     const code_segment = machine.memory[code_segment_start .. code_segment_start + 0xffff];
 
@@ -287,10 +349,15 @@ fn simulateProgram(reader: anytype) !void {
     }
 }
 
-fn simulate_test_program(program_file_path: []const u8) !void {
+fn testFromFile(program_file_path: []const u8) !void {
     if (!@import("builtin").is_test) {
-        @compileError("simulate_test_program can only be used for testing.");
+        @compileError("testFromFile can only be used for testing.");
     }
+
+    const out = std.io.getStdErr();
+    stdout = out.writer();
+
+    try std.fmt.format(stdout, ";;; {s}\n", .{program_file_path});
 
     var program_file = blk: {
         const cwd_path = try std.process.getCwdAlloc(std.testing.allocator);
@@ -301,11 +368,12 @@ fn simulate_test_program(program_file_path: []const u8) !void {
     };
     defer program_file.close();
 
-    try simulateProgram(program_file.reader());
+    try runProgram(program_file.reader());
+    try dumpMemory(stdout);
 }
 
 test "listing_0044_simulate" {
-    try simulate_test_program("course_material/perfaware/part1/listing_0044_register_movs");
+    try testFromFile("course_material/perfaware/part1/listing_0044_register_movs");
 
     const expected_registers = [machine.registers.len]u16{
         0x0004, // ax
@@ -322,7 +390,7 @@ test "listing_0044_simulate" {
 }
 
 test "listing_0045_simulate" {
-    try simulate_test_program("course_material/perfaware/part1/listing_0045_challenge_register_movs");
+    try testFromFile("course_material/perfaware/part1/listing_0045_challenge_register_movs");
 
     const expected_registers = [machine.registers.len]u16{
         0x4411, // ax
@@ -375,6 +443,7 @@ test "sub_simulate" {
     };
 
     machine.reset();
+    try std.io.getStdErr().writer().writeAll(";;; test sub\n");
     for (program) |instruction| {
         try processInstruction(instruction);
     }
@@ -411,6 +480,7 @@ test "add_simulate" {
     };
 
     machine.reset();
+    try std.io.getStdErr().writer().writeAll(";;; test add\n");
     for (program) |instruction| {
         try processInstruction(instruction);
     }
@@ -419,6 +489,7 @@ test "add_simulate" {
 }
 
 pub fn main() !void {
-    try simulateProgram(std.io.getStdIn().reader());
-    try dumpMemory(std.io.getStdOut().writer());
+    stdout = std.io.getStdOut().writer();
+    try runProgram(std.io.getStdIn().reader());
+    try dumpMemory(stdout);
 }
