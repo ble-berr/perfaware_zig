@@ -7,26 +7,37 @@ const printInstruction = dis.printInstruction;
 const Instruction = decode.Instruction;
 const SegmentRegister = decode.SegmentRegister;
 
-var stdout: std.fs.File.Writer = undefined;
-
 const Machine = struct {
     const Flags = struct {
-        trap: bool,
-        direction: bool,
-        interrupt_enable: bool,
-        overflow: bool,
-        sign: bool,
-        zero: bool,
-        auxiliary_carry: bool,
-        parity: bool,
-        carry: bool,
+        trap: bool = false,
+        direction: bool = false,
+        interrupt_enable: bool = false,
+        overflow: bool = false,
+        sign: bool = false,
+        zero: bool = false,
+        auxiliary_carry: bool = false,
+        parity: bool = false,
+        carry: bool = false,
     };
 
-    memory: [1024 * 1024]u8,
-    instruction_pointer: u16,
-    registers: [8]u16,
-    segment_registers: [4]u16,
-    flags: Flags,
+    const LogBuf = std.ArrayListAligned(u8, null);
+    const LogWriter = std.io.Writer(*LogBuf, error{}, logWrite);
+
+    memory: [1024 * 1024]u8 = .{0} ** (1024 * 1024),
+    instruction_pointer: u16 = 0,
+    registers: [8]u16 = .{0} ** (8),
+    segment_registers: [4]u16 = .{0} ** (4),
+    flags: Flags = .{},
+    logbuf: LogBuf = LogBuf.init(std.heap.page_allocator),
+
+    fn logWrite(logbuf: *LogBuf, bytes: []const u8) error{}!usize {
+        logbuf.*.appendSlice(bytes) catch {};
+        return bytes.len;
+    }
+
+    fn logger(m: *Machine) LogWriter {
+        return .{ .context = &m.*.logbuf };
+    }
 
     fn reset(m: *Machine) void {
         m.*.memory = .{0} ** m.memory.len;
@@ -44,6 +55,7 @@ const Machine = struct {
             .parity = false,
             .carry = false,
         };
+        m.*.logbuf.clearRetainingCapacity();
     }
 
     fn ptrFromRegister(m: *Machine, r: decode.Register) Ptr {
@@ -70,7 +82,7 @@ const Machine = struct {
     }
 };
 
-var machine: Machine = undefined;
+var machine: Machine = .{};
 
 const Ptr = union(decode.OperandWidth) {
     byte: *u8,
@@ -137,12 +149,12 @@ fn printChange(op: decode.InstructionOperand, before: u16, after: u16) !void {
     }
 
     switch (width) {
-        .byte => try std.fmt.format(stdout, "{s}:{x:0>2}->{x:0>2}", .{
+        .byte => try std.fmt.format(machine.logger(), "{s}:{x:0>2}->{x:0>2}", .{
             name,
             @as(u8, @truncate(before)),
             @as(u8, @truncate(after)),
         }),
-        .word => try std.fmt.format(stdout, "{s}:{x:0>4}->{x:0>4}", .{
+        .word => try std.fmt.format(machine.logger(), "{s}:{x:0>4}->{x:0>4}", .{
             name, before, after,
         }),
     }
@@ -150,38 +162,38 @@ fn printChange(op: decode.InstructionOperand, before: u16, after: u16) !void {
 
 fn printFlags(flags: Machine.Flags) !void {
     if (flags.trap) {
-        try stdout.writeAll("T");
+        try machine.logger().writeAll("T");
     }
     if (flags.direction) {
-        try stdout.writeAll("D");
+        try machine.logger().writeAll("D");
     }
     if (flags.interrupt_enable) {
-        try stdout.writeAll("I");
+        try machine.logger().writeAll("I");
     }
     if (flags.overflow) {
-        try stdout.writeAll("O");
+        try machine.logger().writeAll("O");
     }
     if (flags.sign) {
-        try stdout.writeAll("S");
+        try machine.logger().writeAll("S");
     }
     if (flags.zero) {
-        try stdout.writeAll("Z");
+        try machine.logger().writeAll("Z");
     }
     if (flags.auxiliary_carry) {
-        try stdout.writeAll("A");
+        try machine.logger().writeAll("A");
     }
     if (flags.parity) {
-        try stdout.writeAll("P");
+        try machine.logger().writeAll("P");
     }
     if (flags.carry) {
-        try stdout.writeAll("C");
+        try machine.logger().writeAll("C");
     }
 }
 
 fn printFlagChange(before: Machine.Flags, after: Machine.Flags) !void {
-    try stdout.writeAll(" flags:");
+    try machine.logger().writeAll(" flags:");
     try printFlags(before);
-    try stdout.writeAll("->");
+    try machine.logger().writeAll("->");
     try printFlags(after);
 }
 
@@ -189,7 +201,7 @@ fn processMov(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const src = valueFromOperand(instruction.src);
 
-    try stdout.writeAll(" ; ");
+    try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), src);
 
     switch (dst) {
@@ -204,7 +216,7 @@ fn processSub(instruction: Instruction) !void {
     const src = valueFromOperand(instruction.src);
     const result = @as(u32, dst_val) -% src;
 
-    try stdout.writeAll(" ; ");
+    try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), src);
 
     const prev_flags = machine.flags;
@@ -266,14 +278,14 @@ fn processAdd(instruction: Instruction) !void {
 }
 
 fn processInstruction(instruction: Instruction) !void {
-    try printInstruction(stdout, instruction, machine.instruction_pointer);
+    try printInstruction(machine.logger(), instruction, machine.instruction_pointer);
     switch (instruction.type) {
         .mov => try processMov(instruction),
         .sub => try processSub(instruction),
         .add => try processAdd(instruction),
         else => return error.UnsupportedInstruction,
     }
-    try stdout.writeAll("\n");
+    try machine.logger().writeAll("\n");
 }
 
 fn dumpRegister(writer: anytype, register: decode.Register) !void {
@@ -349,69 +361,114 @@ fn runProgram(program_reader: anytype) !void {
     }
 }
 
-fn testFromFile(program_file_path: []const u8) !void {
+fn testFromFile(path: []const u8, expect: Machine) !void {
     if (!@import("builtin").is_test) {
         @compileError("testFromFile can only be used for testing.");
     }
 
-    const out = std.io.getStdErr();
-    stdout = out.writer();
-
-    try std.fmt.format(stdout, ";;; {s}\n", .{program_file_path});
+    try std.fmt.format(machine.logger(), ";;; {s}\n", .{path});
 
     var program_file = blk: {
         const cwd_path = try std.process.getCwdAlloc(std.testing.allocator);
         defer std.testing.allocator.free(cwd_path);
         var cwd = try std.fs.openDirAbsolute(cwd_path, .{});
         defer cwd.close();
-        break :blk try cwd.openFile(program_file_path, .{ .mode = .read_only });
+        break :blk try cwd.openFile(path, .{ .mode = .read_only });
     };
     defer program_file.close();
 
+    errdefer std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
     try runProgram(program_file.reader());
-    try dumpMemory(stdout);
+    try expectMachine(expect);
+}
+
+fn expectMachine(expect: Machine) !void {
+    try std.testing.expectEqualSlices(u16, &expect.registers, &machine.registers);
+    try std.testing.expectEqualSlices(u16, &expect.segment_registers, &machine.segment_registers);
 }
 
 test "listing_0044_simulate" {
-    try testFromFile("course_material/perfaware/part1/listing_0044_register_movs");
-
-    const expected_registers = [machine.registers.len]u16{
-        0x0004, // ax
-        0x0002, // cx
-        0x0001, // dx
-        0x0003, // bx
-        0x0001, // sp
-        0x0002, // bp
-        0x0003, // si
-        0x0004, // di
+    const expect: Machine = .{
+        .registers = .{
+            0x0004, // ax
+            0x0002, // cx
+            0x0001, // dx
+            0x0003, // bx
+            0x0001, // sp
+            0x0002, // bp
+            0x0003, // si
+            0x0004, // di
+        },
+        .logbuf = undefined,
     };
-
-    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.registers);
+    try testFromFile("course_material/perfaware/part1/listing_0044_register_movs", expect);
 }
 
 test "listing_0045_simulate" {
-    try testFromFile("course_material/perfaware/part1/listing_0045_challenge_register_movs");
-
-    const expected_registers = [machine.registers.len]u16{
-        0x4411, // ax
-        0x6677, // cx
-        0x7788, // dx
-        0x3344, // bx
-        0x4411, // sp
-        0x3344, // bp
-        0x6677, // si
-        0x7788, // di
+    const expect: Machine = .{
+        .registers = .{
+            0x4411, // ax
+            0x6677, // cx
+            0x7788, // dx
+            0x3344, // bx
+            0x4411, // sp
+            0x3344, // bp
+            0x6677, // si
+            0x7788, // di
+        },
+        .segment_registers = .{
+            0x6677, // es
+            0x0000, // cs
+            0x4411, // ss
+            0x3344, // ds
+        },
+        .logbuf = undefined,
     };
+    try testFromFile("course_material/perfaware/part1/listing_0045_challenge_register_movs", expect);
+}
 
-    const expected_segment_registers = [machine.segment_registers.len]u16{
-        0x6677, // es
-        0x0000, // cs
-        0x4411, // ss
-        0x3344, // ds
+test "listing_0046_simulate" {
+    const expect: Machine = .{
+        .registers = .{
+            0x0000, // ax
+            0x0f01, // cx
+            0x0000, // dx
+            0xe102, // bx
+            0x03e6, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .flags = .{
+            .parity = true,
+            .zero = true,
+        },
+        .logbuf = undefined,
     };
+    try testFromFile("course_material/perfaware/part1/listing_0046_add_sub_cmp", expect);
+}
 
-    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.registers);
-    try std.testing.expectEqualSlices(u16, &expected_segment_registers, &machine.segment_registers);
+test "listing_0047_simulate" {
+    const expect: Machine = .{
+        .registers = .{
+            0x0000, // ax
+            0x0000, // cx
+            0x000a, // dx
+            0x9ca5, // bx
+            0x0063, // sp
+            0x0062, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .flags = .{
+            .carry = true,
+            .parity = true,
+            .auxiliary_carry = true,
+            .sign = true,
+        },
+        .logbuf = undefined,
+    };
+    try testFromFile("course_material/perfaware/part1/listing_0047_challenge_register_movs", expect);
 }
 
 test "sub_simulate" {
@@ -443,12 +500,27 @@ test "sub_simulate" {
     };
 
     machine.reset();
-    try std.io.getStdErr().writer().writeAll(";;; test sub\n");
     for (program) |instruction| {
         try processInstruction(instruction);
     }
 
-    try std.testing.expectEqual(@as(u16, 0x4321), machine.registers[0]);
+    const expect: Machine = .{
+        .registers = .{
+            0x4321, // ax
+            0x0000, // cx
+            0x0000, // dx
+            0x0000, // bx
+            0x0000, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .logbuf = undefined,
+    };
+    expectMachine(expect) catch |err| {
+        std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
+        return err;
+    };
 }
 
 test "add_simulate" {
@@ -480,16 +552,30 @@ test "add_simulate" {
     };
 
     machine.reset();
-    try std.io.getStdErr().writer().writeAll(";;; test add\n");
     for (program) |instruction| {
         try processInstruction(instruction);
     }
 
-    try std.testing.expectEqual(@as(u16, 0x6789), machine.registers[0]);
+    const expect: Machine = .{
+        .registers = .{
+            0x6789, // ax
+            0x0000, // cx
+            0x0000, // dx
+            0x0000, // bx
+            0x0000, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .logbuf = undefined,
+    };
+    expectMachine(expect) catch |err| {
+        std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
+        return err;
+    };
 }
 
 pub fn main() !void {
-    stdout = std.io.getStdOut().writer();
     try runProgram(std.io.getStdIn().reader());
-    try dumpMemory(stdout);
+    try dumpMemory(machine.logger());
 }
