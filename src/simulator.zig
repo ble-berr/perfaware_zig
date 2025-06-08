@@ -225,7 +225,7 @@ fn printFlagChange(before: Machine.Flags, after: Machine.Flags) !void {
     try printFlags(after);
 }
 
-fn processMov(instruction: Instruction) !void {
+fn simMov(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const src = valueFromOperand(instruction.src);
 
@@ -238,7 +238,7 @@ fn processMov(instruction: Instruction) !void {
     }
 }
 
-fn processSub(instruction: Instruction) !void {
+fn simSub(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
@@ -277,7 +277,7 @@ fn processSub(instruction: Instruction) !void {
     try printFlagChange(prev_flags, machine.flags);
 }
 
-fn processAdd(instruction: Instruction) !void {
+fn simAdd(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
@@ -292,34 +292,34 @@ fn processAdd(instruction: Instruction) !void {
         .byte => |ptr| {
             ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_val > src); // ??????
+            machine.flags.carry = (result > 0xff);
             machine.flags.auxiliary_carry = false; // TODO
             machine.flags.zero = (ptr.* == 0);
             machine.flags.sign = (ptr.* > 0x80);
             machine.flags.parity = ((@popCount(ptr.*) % 2) == 0);
-            machine.flags.overflow = (result > 0xff);
+            machine.flags.overflow = if (machine.flags.sign) dst_val < 0x80 else dst_val >= 0x80;
         },
         .word => |ptr| {
             ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_val > src); // ??????
+            machine.flags.carry = (result > 0xffff);
             machine.flags.auxiliary_carry = false; // TODO
             machine.flags.zero = (ptr.* == 0);
             machine.flags.sign = (ptr.* > 0x8000);
             machine.flags.parity = ((@popCount(ptr.* & 0xff) % 2) == 0);
-            machine.flags.overflow = (result > 0xffff);
+            machine.flags.overflow = if (machine.flags.sign) dst_val < 0x8000 else dst_val >= 0x8000;
         },
     }
 
     try printFlagChange(prev_flags, machine.flags);
 }
 
-fn processInstruction(instruction: Instruction) !void {
+fn simInstruction(instruction: Instruction) !void {
     try printInstruction(machine.logger(), instruction, machine.instruction_pointer);
     switch (instruction.type) {
-        .mov => try processMov(instruction),
-        .sub => try processSub(instruction),
-        .add => try processAdd(instruction),
+        .mov => try simMov(instruction),
+        .sub => try simSub(instruction),
+        .add => try simAdd(instruction),
         else => return error.UnsupportedInstruction,
     }
     try machine.logger().writeAll("\n");
@@ -360,7 +360,7 @@ fn runProgram(program_reader: anytype) !void {
 
         machine.instruction_pointer += instruction.length;
 
-        processInstruction(instruction) catch |err| {
+        simInstruction(instruction) catch |err| {
             std.debug.print("{s}: {s} {s} {s}\n", .{
                 @errorName(err),
                 @tagName(instruction.type),
@@ -516,7 +516,7 @@ test "sub_simulate" {
 
     machine.reset();
     for (program) |instruction| {
-        try processInstruction(instruction);
+        try simInstruction(instruction);
     }
 
     const expect: Machine = .{
@@ -568,7 +568,7 @@ test "add_simulate" {
 
     machine.reset();
     for (program) |instruction| {
-        try processInstruction(instruction);
+        try simInstruction(instruction);
     }
 
     const expect: Machine = .{
