@@ -1,9 +1,71 @@
-const machine = @import("machine.zig");
 const decode = @import("decode.zig");
 const std = @import("std");
 
 const Instruction = decode.Instruction;
 const SegmentRegister = decode.SegmentRegister;
+
+const Machine = struct {
+    const Flags = struct {
+        trap: bool,
+        direction: bool,
+        interrupt_enable: bool,
+        overflow: bool,
+        sign: bool,
+        zero: bool,
+        auxiliary_carry: bool,
+        parity: bool,
+        carry: bool,
+    };
+
+    memory: [1024 * 1024]u8,
+    instruction_pointer: u16,
+    registers: [8]u16,
+    segment_registers: [4]u16,
+    flags: Flags,
+
+    fn reset(m: *Machine) void {
+        m.*.memory = .{0} ** m.memory.len;
+        m.*.registers = .{0} ** m.registers.len;
+        m.*.segment_registers = .{0} ** m.segment_registers.len;
+        m.*.instruction_pointer = 0;
+        m.*.flags = .{
+            .trap = false,
+            .direction = false,
+            .interrupt_enable = false,
+            .overflow = false,
+            .sign = false,
+            .zero = false,
+            .auxiliary_carry = false,
+            .parity = false,
+            .carry = false,
+        };
+    }
+
+    fn ptrFromRegister(m: *Machine, r: decode.Register) Ptr {
+        const halves: *[8]u8 = @ptrCast(&m.*.registers);
+
+        return switch (r) {
+            .ax => .{ .word = &m.*.registers[0] },
+            .al => .{ .byte = &halves.*[0] },
+            .ah => .{ .byte = &halves.*[1] },
+            .cx => .{ .word = &m.*.registers[1] },
+            .cl => .{ .byte = &halves.*[2] },
+            .ch => .{ .byte = &halves.*[3] },
+            .dx => .{ .word = &m.*.registers[2] },
+            .dl => .{ .byte = &halves.*[4] },
+            .dh => .{ .byte = &halves.*[5] },
+            .bx => .{ .word = &m.*.registers[3] },
+            .bl => .{ .byte = &halves.*[6] },
+            .bh => .{ .byte = &halves.*[7] },
+            .sp => .{ .word = &m.*.registers[4] },
+            .bp => .{ .word = &m.*.registers[5] },
+            .si => .{ .word = &m.*.registers[6] },
+            .di => .{ .word = &m.*.registers[7] },
+        };
+    }
+};
+
+var machine: Machine = undefined;
 
 const Ptr = union(decode.OperandWidth) {
     byte: *u8,
@@ -20,21 +82,9 @@ const Ptr = union(decode.OperandWidth) {
 fn ptrFromOperand(op: decode.InstructionOperand) Ptr {
     return switch (op) {
         .none => unreachable,
-        .register => |r| switch (r) {
-            .al => .{ .byte = &machine.byte_registers[0] },
-            .ah => .{ .byte = &machine.byte_registers[1] },
-            .cl => .{ .byte = &machine.byte_registers[2] },
-            .ch => .{ .byte = &machine.byte_registers[3] },
-            .dl => .{ .byte = &machine.byte_registers[4] },
-            .dh => .{ .byte = &machine.byte_registers[5] },
-            .bl => .{ .byte = &machine.byte_registers[6] },
-            .bh => .{ .byte = &machine.byte_registers[7] },
-            else => |wr| .{
-                .word = &machine.word_registers[@as(u3, @truncate(@intFromEnum(wr)))],
-            },
-        },
-        .direct_address => unreachable, // TODO: implement
-        .effective_address => unreachable, // TODO: implement
+        .register => |r| machine.ptrFromRegister(r),
+        .direct_address => unreachable, // TODO
+        .effective_address => unreachable, // TODO
         .immediate_byte => unreachable, // illegal
         .immediate_word => unreachable, // illegal
         .short_jump => unreachable, // use another function?
@@ -47,19 +97,9 @@ fn ptrFromOperand(op: decode.InstructionOperand) Ptr {
 fn valueFromOperand(op: decode.InstructionOperand) u16 {
     return switch (op) {
         .none => unreachable,
-        .register => |r| switch (r) {
-            .al => machine.byte_registers[0],
-            .ah => machine.byte_registers[1],
-            .cl => machine.byte_registers[2],
-            .ch => machine.byte_registers[3],
-            .dl => machine.byte_registers[4],
-            .dh => machine.byte_registers[5],
-            .bl => machine.byte_registers[6],
-            .bh => machine.byte_registers[7],
-            else => |wr| machine.word_registers[@as(u3, @truncate(@intFromEnum(wr)))],
-        },
-        .direct_address => unreachable, // TODO: implement
-        .effective_address => unreachable, // TODO: implement
+        .register => |r| machine.ptrFromRegister(r).value(),
+        .direct_address => unreachable, // TODO
+        .effective_address => unreachable, // TODO
         .immediate_byte => |b| b,
         .immediate_word => |w| w,
         .short_jump => unreachable, // use another function?
@@ -151,7 +191,7 @@ fn processInstruction(instruction: Instruction) !void {
 fn dumpRegister(writer: anytype, register: decode.Register) !void {
     try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
         @tagName(register),
-        machine.word_registers[@as(u3, @truncate(@intFromEnum(register)))],
+        machine.ptrFromRegister(register).value(),
     });
 }
 
@@ -267,7 +307,7 @@ fn simulate_test_program(program_file_path: []const u8) !void {
 test "listing_0044_simulate" {
     try simulate_test_program("course_material/perfaware/part1/listing_0044_register_movs");
 
-    const expected_registers = [machine.word_registers.len]u16{
+    const expected_registers = [machine.registers.len]u16{
         0x0004, // ax
         0x0002, // cx
         0x0001, // dx
@@ -278,13 +318,13 @@ test "listing_0044_simulate" {
         0x0004, // di
     };
 
-    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.word_registers);
+    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.registers);
 }
 
 test "listing_0045_simulate" {
     try simulate_test_program("course_material/perfaware/part1/listing_0045_challenge_register_movs");
 
-    const expected_registers = [machine.word_registers.len]u16{
+    const expected_registers = [machine.registers.len]u16{
         0x4411, // ax
         0x6677, // cx
         0x7788, // dx
@@ -302,7 +342,7 @@ test "listing_0045_simulate" {
         0x3344, // ds
     };
 
-    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.word_registers);
+    try std.testing.expectEqualSlices(u16, &expected_registers, &machine.registers);
     try std.testing.expectEqualSlices(u16, &expected_segment_registers, &machine.segment_registers);
 }
 
@@ -339,7 +379,7 @@ test "sub_simulate" {
         try processInstruction(instruction);
     }
 
-    try std.testing.expectEqual(@as(u16, 0x4321), machine.word_registers[0]);
+    try std.testing.expectEqual(@as(u16, 0x4321), machine.registers[0]);
 }
 
 test "add_simulate" {
@@ -375,7 +415,7 @@ test "add_simulate" {
         try processInstruction(instruction);
     }
 
-    try std.testing.expectEqual(@as(u16, 0x6789), machine.word_registers[0]);
+    try std.testing.expectEqual(@as(u16, 0x6789), machine.registers[0]);
 }
 
 pub fn main() !void {
