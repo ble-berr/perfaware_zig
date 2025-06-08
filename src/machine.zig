@@ -32,21 +32,11 @@ pub var flags = Flags{
 };
 
 pub fn reset() void {
-    for (0..memory.len) |i| {
-        memory[i] = 0;
-    }
-
+    memory = .{0} ** memory.len;
+    word_registers = .{0} ** word_registers.len;
+    segment_registers = .{0} ** segment_registers.len;
     instruction_pointer = 0;
-
-    for (0..word_registers.len) |i| {
-        word_registers[i] = 0;
-    }
-
-    for (0..segment_registers.len) |i| {
-        segment_registers[i] = 0;
-    }
-
-    flags = Flags{
+    flags = .{
         .trap = false,
         .direction = false,
         .interrupt_enable = false,
