@@ -1,8 +1,8 @@
 const std = @import("std");
 
-pub const OperandWidth = enum {
-    byte,
-    word,
+pub const OperandWidth = enum(u2) {
+    byte = 1,
+    word = 2,
 };
 
 // NOTE(benjamin): values chosen to allow direct casting of 3 bit values in the
@@ -295,26 +295,14 @@ fn getModOperand(mod_byte: ModByte, width: OperandWidth, byte_stream: []const u8
     }
 }
 
-fn getImmediateOperand(
-    width: OperandWidth,
-    byte_stream: []const u8,
-) !struct { length: u8, operand: InstructionOperand } {
-    switch (width) {
-        .byte => {
-            if (byte_stream.len < 1) {
-                return Error.IncompleteProgram;
-            }
-            return .{ .length = 1, .operand = .{ .immediate_byte = byte_stream[0] } };
-        },
-        .word => {
-            if (byte_stream.len < 2) {
-                return Error.IncompleteProgram;
-            }
-            return .{ .length = 2, .operand = .{
-                .immediate_word = make16(byte_stream[0], byte_stream[1]),
-            } };
-        },
+fn getImmediateOperand(width: OperandWidth, byte_stream: []const u8) !InstructionOperand {
+    if (byte_stream.len < @intFromEnum(width)) {
+        return Error.IncompleteProgram;
     }
+    return switch (width) {
+        .byte => .{ .immediate_byte = byte_stream[0] },
+        .word => .{ .immediate_word = make16(byte_stream[0], byte_stream[1]) },
+    };
 }
 
 fn decodeRegisterRM(
@@ -408,10 +396,9 @@ fn decodeMemImmediate(
         instruction.dst = mod_operand.operand;
     }
 
-    const immediate_operand = try getImmediateOperand(width, byte_stream[instruction.length..]);
+    instruction.src = try getImmediateOperand(width, byte_stream[instruction.length..]);
+    instruction.length += @intFromEnum(width);
 
-    instruction.length += immediate_operand.length;
-    instruction.src = immediate_operand.operand;
 
     return instruction;
 }
@@ -463,13 +450,11 @@ fn decodeAccImmediate(
     immediate_width: OperandWidth,
     byte_stream: []const u8,
 ) !Instruction {
-    const immediate_decode = try getImmediateOperand(immediate_width, byte_stream[1..]);
-
     return Instruction{
-        .length = immediate_decode.length + 1,
+        .length = @intFromEnum(immediate_width) + 1,
         .type = instruction_type,
         .dst = .{ .register = accumulator },
-        .src = immediate_decode.operand,
+        .src = try getImmediateOperand(immediate_width, byte_stream[1..]),
     };
 }
 
@@ -480,13 +465,9 @@ fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instructio
 
     const mod_byte = parseModByte(byte_stream[1]);
     const mod_operand = try getModOperand(mod_byte, width, byte_stream[2..]);
-    const immediate = try getImmediateOperand(
-        width,
-        byte_stream[(2 + mod_operand.length)..],
-    );
 
     return Instruction{
-        .length = 2 + mod_operand.length + immediate.length,
+        .length = 2 + mod_operand.length + @intFromEnum(width),
         .type = switch (mod_byte.a) {
             0 => .add,
             1 => .@"or",
@@ -498,7 +479,7 @@ fn decodeOpRmImmediate(width: OperandWidth, byte_stream: []const u8) !Instructio
             7 => .cmp,
         },
         .dst = mod_operand.operand,
-        .src = immediate.operand,
+        .src = try getImmediateOperand(width, byte_stream[(2 + mod_operand.length)..]),
     };
 }
 
@@ -682,9 +663,8 @@ fn decodeGroup1(width: OperandWidth, byte_stream: []const u8) !Instruction {
     };
 
     if (instruction_type == .@"test") {
-        const immediate_decode = try getImmediateOperand(width, byte_stream[instruction.length..]);
-        instruction.length += immediate_decode.length;
-        instruction.src = immediate_decode.operand;
+        instruction.src = try getImmediateOperand(width, byte_stream[instruction.length..]);
+        instruction.length += @intFromEnum(width);
     }
 
     return instruction;
