@@ -3,205 +3,138 @@ const decode = @import("decode.zig");
 const std = @import("std");
 
 const Instruction = decode.Instruction;
-const Register = decode.Register;
 const SegmentRegister = decode.SegmentRegister;
 
 const Ptr = union(decode.OperandWidth) {
     byte: *u8,
     word: *u16,
+
+    fn value(ptr: Ptr) u16 {
+        return switch (ptr) {
+            .byte => |b| b.*,
+            .word => |w| w.*,
+        };
+    }
 };
 
-const Value = union(decode.OperandWidth) {
-    byte: u8,
-    word: u16,
-};
-
-fn getRegister(register: Register) Ptr {
-    return switch (register) {
-        .al => .{ .byte = &machine.byte_registers[0] },
-        .ah => .{ .byte = &machine.byte_registers[1] },
-        .cl => .{ .byte = &machine.byte_registers[2] },
-        .ch => .{ .byte = &machine.byte_registers[3] },
-        .dl => .{ .byte = &machine.byte_registers[4] },
-        .dh => .{ .byte = &machine.byte_registers[5] },
-        .bl => .{ .byte = &machine.byte_registers[6] },
-        .bh => .{ .byte = &machine.byte_registers[7] },
-        else => |r| .{
-            .word = &machine.word_registers[@as(u3, @truncate(@intFromEnum(r)))],
-        },
-    };
-}
-
-fn getDestination(dst_operand: decode.InstructionOperand) !Ptr {
-    return switch (dst_operand) {
+fn ptrFromOperand(op: decode.InstructionOperand) Ptr {
+    return switch (op) {
         .none => unreachable,
-        .register => |r| getRegister(r),
+        .register => |r| switch (r) {
+            .al => .{ .byte = &machine.byte_registers[0] },
+            .ah => .{ .byte = &machine.byte_registers[1] },
+            .cl => .{ .byte = &machine.byte_registers[2] },
+            .ch => .{ .byte = &machine.byte_registers[3] },
+            .dl => .{ .byte = &machine.byte_registers[4] },
+            .dh => .{ .byte = &machine.byte_registers[5] },
+            .bl => .{ .byte = &machine.byte_registers[6] },
+            .bh => .{ .byte = &machine.byte_registers[7] },
+            else => |wr| .{
+                .word = &machine.word_registers[@as(u3, @truncate(@intFromEnum(wr)))],
+            },
+        },
+        .direct_address => unreachable, // TODO: implement
+        .effective_address => unreachable, // TODO: implement
+        .immediate_byte => unreachable, // illegal
+        .immediate_word => unreachable, // illegal
+        .short_jump => unreachable, // use another function?
+        .near_jump => unreachable, // use another function?
+        .far_jump => unreachable, // use another function?
         .segment => |sr| .{ .word = &machine.segment_registers[@intFromEnum(sr)] },
-        .immediate_byte, .immediate_word => unreachable,
-        else => error.UnsupportedInstruction,
     };
 }
 
-fn getSource(src_operand: decode.InstructionOperand) !Value {
-    return switch (src_operand) {
+fn valueFromOperand(op: decode.InstructionOperand) u16 {
+    return switch (op) {
         .none => unreachable,
-        .register => |r| switch (getRegister(r)) {
-            .byte => |b| .{ .byte = b.* },
-            .word => |w| .{ .word = w.* },
+        .register => |r| switch (r) {
+            .al => machine.byte_registers[0],
+            .ah => machine.byte_registers[1],
+            .cl => machine.byte_registers[2],
+            .ch => machine.byte_registers[3],
+            .dl => machine.byte_registers[4],
+            .dh => machine.byte_registers[5],
+            .bl => machine.byte_registers[6],
+            .bh => machine.byte_registers[7],
+            else => |wr| machine.word_registers[@as(u3, @truncate(@intFromEnum(wr)))],
         },
-        .segment => |sr| .{ .word = machine.segment_registers[@intFromEnum(sr)] },
-        .immediate_byte => |byte| .{ .byte = byte },
-        .immediate_word => |word| .{ .word = word },
-        else => error.UnsupportedInstruction,
+        .direct_address => unreachable, // TODO: implement
+        .effective_address => unreachable, // TODO: implement
+        .immediate_byte => |b| b,
+        .immediate_word => |w| w,
+        .short_jump => unreachable, // use another function?
+        .near_jump => unreachable, // use another function?
+        .far_jump => unreachable, // use another function?
+        .segment => |sr| machine.segment_registers[@intFromEnum(sr)],
     };
 }
 
 fn processMov(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst);
-    const src = try getSource(instruction.src);
-
-    // Output debug info
-    {
-        const dst_name: []const u8 = switch (instruction.dst) {
-            .register => |r| @tagName(r),
-            .segment => |s| @tagName(s),
-            else => unreachable,
-        };
-
-        const dst_val: u16 = switch (dst) {
-            .byte => |b| b.*,
-            .word => |w| w.*,
-        };
-        const src_val: u16 = switch (src) {
-            .byte => |b| b,
-            .word => |w| w,
-        };
-
-        std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, src_val });
-    }
+    const dst = ptrFromOperand(instruction.dst);
+    const src = valueFromOperand(instruction.src);
 
     switch (dst) {
-        .byte => |dst_byte| switch (src) {
-            .byte => |src_byte| dst_byte.* = src_byte,
-            .word => return error.WordToByte,
-        },
-        .word => |dst_word| switch (src) {
-            .byte => |src_byte| dst_word.* = src_byte,
-            .word => |src_word| dst_word.* = src_word,
-        },
+        .byte => |p| p.* = @truncate(src),
+        .word => |p| p.* = src,
     }
 }
 
-// TODO(benjamin): overflow and auxiliary carry flags
 fn processSub(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst);
-    const src = try getSource(instruction.src);
-
-    // Output debug info
-    {
-        const dst_name: []const u8 = switch (instruction.dst) {
-            .register => |r| @tagName(r),
-            .segment => |s| @tagName(s),
-            else => unreachable,
-        };
-
-        const dst_val: u16 = switch (dst) {
-            .byte => |b| b.*,
-            .word => |w| w.*,
-        };
-        const src_val: u16 = switch (src) {
-            .byte => |b| b,
-            .word => |w| w,
-        };
-
-        std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, dst_val - src_val });
-    }
+    const dst = ptrFromOperand(instruction.dst);
+    const dst_val = dst.value();
+    const src = valueFromOperand(instruction.src);
+    const result = @as(u32, dst_val) -% src;
 
     switch (dst) {
-        .byte => |dst_byte| {
-            const src_byte = switch (src) {
-                .byte => |b| b,
-                .word => return error.WordToByte,
-            };
+        .byte => |ptr| {
+            ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_byte.* < src_byte);
-
-            dst_byte.* -= src_byte;
-
-            machine.flags.zero = (dst_byte.* == 0);
-            machine.flags.sign = ((dst_byte.* & 0x80) != 0);
-            machine.flags.parity = ((@popCount(dst_byte.*) % 2) != 0);
+            machine.flags.carry = (dst_val < src); // ??????
+            machine.flags.auxiliary_carry = false; // TODO
+            machine.flags.zero = (ptr.* == 0);
+            machine.flags.sign = (ptr.* > 0x80);
+            machine.flags.parity = ((@popCount(ptr.*) % 2) == 0);
+            machine.flags.overflow = (result > 0xff);
         },
-        .word => |dst_word| {
-            const src_word = switch (src) {
-                .byte => |b| @as(u16, b),
-                .word => |w| w,
-            };
+        .word => |ptr| {
+            ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_word.* < src_word);
-
-            dst_word.* -= src_word;
-
-            machine.flags.zero = (dst_word.* == 0);
-            machine.flags.sign = ((dst_word.* & 0x80) != 0);
-            machine.flags.parity = ((@popCount(dst_word.*) % 2) != 0);
+            machine.flags.carry = (dst_val < src); // ??????
+            machine.flags.auxiliary_carry = false; // TODO
+            machine.flags.zero = (ptr.* == 0);
+            machine.flags.sign = (ptr.* > 0x8000);
+            machine.flags.parity = ((@popCount(ptr.* & 0xff) % 2) == 0);
+            machine.flags.overflow = (result > 0xffff);
         },
     }
 }
 
-// TODO(benjamin): overflow and auxiliary carry flags
 fn processAdd(instruction: Instruction) !void {
-    const dst = try getDestination(instruction.dst);
-    const src = try getSource(instruction.src);
-
-    // Output debug info
-    {
-        const dst_name: []const u8 = switch (instruction.dst) {
-            .register => |r| @tagName(r),
-            .segment => |s| @tagName(s),
-            else => unreachable,
-        };
-
-        const dst_val: u16 = switch (dst) {
-            .byte => |b| b.*,
-            .word => |w| w.*,
-        };
-        const src_val: u16 = switch (src) {
-            .byte => |b| b,
-            .word => |w| w,
-        };
-
-        std.debug.print("{s}: 0x{x}->0x{x}\n", .{ dst_name, dst_val, dst_val + src_val });
-    }
+    const dst = ptrFromOperand(instruction.dst);
+    const dst_val = dst.value();
+    const src = valueFromOperand(instruction.src);
+    const result = @as(u32, dst_val) +% src;
 
     switch (dst) {
-        .byte => |dst_byte| {
-            const src_byte = switch (src) {
-                .byte => |b| b,
-                .word => return error.WordToByte,
-            };
+        .byte => |ptr| {
+            ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_byte.* > src_byte);
-
-            dst_byte.* += src_byte;
-
-            machine.flags.zero = (dst_byte.* == 0);
-            machine.flags.sign = ((dst_byte.* & 0x80) != 0);
-            machine.flags.parity = ((@popCount(dst_byte.*) % 2) != 0);
+            machine.flags.carry = (dst_val > src); // ??????
+            machine.flags.auxiliary_carry = false; // TODO
+            machine.flags.zero = (ptr.* == 0);
+            machine.flags.sign = (ptr.* > 0x80);
+            machine.flags.parity = ((@popCount(ptr.*) % 2) == 0);
+            machine.flags.overflow = (result > 0xff);
         },
-        .word => |dst_word| {
-            const src_word = switch (src) {
-                .byte => |b| @as(u16, b),
-                .word => |w| w,
-            };
+        .word => |ptr| {
+            ptr.* = @truncate(result);
 
-            machine.flags.carry = (dst_word.* > src_word);
-
-            dst_word.* += src_word;
-
-            machine.flags.zero = (dst_word.* == 0);
-            machine.flags.sign = ((dst_word.* & 0x8000) != 0);
-            machine.flags.parity = ((@popCount(dst_word.* & 0x00ff) % 2) != 0);
+            machine.flags.carry = (dst_val > src); // ??????
+            machine.flags.auxiliary_carry = false; // TODO
+            machine.flags.zero = (ptr.* == 0);
+            machine.flags.sign = (ptr.* > 0x8000);
+            machine.flags.parity = ((@popCount(ptr.* & 0xff) % 2) == 0);
+            machine.flags.overflow = (result > 0xffff);
         },
     }
 }
@@ -222,12 +155,11 @@ fn dumpRegister(writer: anytype, register: decode.Register) !void {
     });
 }
 
-fn dumpSegmentRegister(writer: anytype, register: decode.SegmentRegister) !void {
-    try std.fmt.format(
-        writer,
-        "{s}: 0x{x:0>4} ({1d})\n",
-        .{ @tagName(register), machine.segment_registers[@intFromEnum(register)] },
-    );
+fn dumpSegmentRegister(writer: anytype, register: SegmentRegister) !void {
+    try std.fmt.format(writer, "{s}: 0x{x:0>4} ({1d})\n", .{
+        @tagName(register),
+        machine.segment_registers[@intFromEnum(register)],
+    });
 }
 
 fn dumpMemory(writer: anytype) !void {
@@ -286,10 +218,8 @@ fn simulateProgram(reader: anytype) !void {
     machine.reset();
 
     const program_len = try reader.readAll(machine.memory[0..]);
-    const code_segment = blk: {
-        const code_segment_address = machine.segment_registers[@intFromEnum(SegmentRegister.cs)];
-        break :blk machine.memory[code_segment_address .. code_segment_address + 0xffff];
-    };
+    const code_segment_start = machine.segment_registers[@intFromEnum(SegmentRegister.cs)];
+    const code_segment = machine.memory[code_segment_start .. code_segment_start + 0xffff];
 
     while (true) {
         if (code_segment.len < machine.instruction_pointer) {
