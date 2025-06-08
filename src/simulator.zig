@@ -242,37 +242,79 @@ fn simSub(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
-    const result = @as(u32, dst_val) -% src;
+    var result = dst_val -% src;
 
     try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), @truncate(result));
 
     const prev_flags = machine.flags;
 
+    var neg_limit: u16 = undefined;
     switch (dst) {
         .byte => |ptr| {
             ptr.* = @truncate(result);
-
-            machine.flags.carry = (dst_val < src); // ??????
-            machine.flags.auxiliary_carry = false; // TODO
-            machine.flags.zero = (ptr.* == 0);
-            machine.flags.sign = (ptr.* > 0x80);
-            machine.flags.parity = ((@popCount(ptr.*) % 2) == 0);
-            machine.flags.overflow = (result > 0xff);
+            neg_limit = 0x80;
+            result &= 0xff;
         },
         .word => |ptr| {
-            ptr.* = @truncate(result);
-
-            machine.flags.carry = (dst_val < src); // ??????
-            machine.flags.auxiliary_carry = false; // TODO
-            machine.flags.zero = (ptr.* == 0);
-            machine.flags.sign = (ptr.* > 0x8000);
-            machine.flags.parity = ((@popCount(ptr.* & 0xff) % 2) == 0);
-            machine.flags.overflow = (result > 0xffff);
+            ptr.* = result;
+            neg_limit = 0x8000;
         },
     }
 
+    const dst_sign = dst_val >= neg_limit;
+    const src_sign = src >= neg_limit;
+    const result_sign = result >= neg_limit;
+
+    machine.flags.zero = result == 0;
+    machine.flags.sign = result_sign;
+    machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
+    machine.flags.carry = result_sign and !dst_sign; // check this some more
+    machine.flags.auxiliary_carry = false; // TODO
+    if (src_sign) {
+        machine.flags.overflow = !dst_sign and result_sign;
+    } else {
+        machine.flags.overflow = dst_sign and !result_sign;
+    }
+
     try printFlagChange(prev_flags, machine.flags);
+}
+
+fn simCmp(instruction: Instruction) !void {
+    const dst = ptrFromOperand(instruction.dst);
+    const dst_val = dst.value();
+    const src = valueFromOperand(instruction.src);
+    var result = dst_val -% src;
+
+    try machine.logger().writeAll(" ; ");
+
+    const prev_flags = machine.flags;
+
+    var neg_limit: u16 = undefined;
+    switch (dst) {
+        .byte => {
+            neg_limit = 0x80;
+            result &= 0xff;
+        },
+        .word => {
+            neg_limit = 0x8000;
+        },
+    }
+
+    const dst_sign = dst_val >= neg_limit;
+    const src_sign = src >= neg_limit;
+    const result_sign = result >= neg_limit;
+
+    machine.flags.zero = result == 0;
+    machine.flags.sign = result_sign;
+    machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
+    machine.flags.carry = result_sign and !dst_sign; // check this some more
+    machine.flags.auxiliary_carry = false; // TODO
+    if (src_sign) {
+        machine.flags.overflow = !dst_sign and result_sign;
+    } else {
+        machine.flags.overflow = dst_sign and !result_sign;
+    }
 
     try printFlagChange(prev_flags, machine.flags);
 }
@@ -281,34 +323,39 @@ fn simAdd(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
-    const result = @as(u32, dst_val) +% src;
+    var result = dst_val +% src;
 
     try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), @truncate(result));
 
     const prev_flags = machine.flags;
 
+    var neg_limit: u16 = undefined;
     switch (dst) {
         .byte => |ptr| {
             ptr.* = @truncate(result);
-
-            machine.flags.carry = (result > 0xff);
-            machine.flags.auxiliary_carry = false; // TODO
-            machine.flags.zero = (ptr.* == 0);
-            machine.flags.sign = (ptr.* > 0x80);
-            machine.flags.parity = ((@popCount(ptr.*) % 2) == 0);
-            machine.flags.overflow = if (machine.flags.sign) dst_val < 0x80 else dst_val >= 0x80;
+            neg_limit = 0x80;
+            result &= 0xff;
         },
         .word => |ptr| {
-            ptr.* = @truncate(result);
-
-            machine.flags.carry = (result > 0xffff);
-            machine.flags.auxiliary_carry = false; // TODO
-            machine.flags.zero = (ptr.* == 0);
-            machine.flags.sign = (ptr.* > 0x8000);
-            machine.flags.parity = ((@popCount(ptr.* & 0xff) % 2) == 0);
-            machine.flags.overflow = if (machine.flags.sign) dst_val < 0x8000 else dst_val >= 0x8000;
+            ptr.* = result;
+            neg_limit = 0x8000;
         },
+    }
+
+    const dst_sign = dst_val >= neg_limit;
+    const src_sign = src >= neg_limit;
+    const result_sign = result >= neg_limit;
+
+    machine.flags.zero = result == 0;
+    machine.flags.sign = result_sign;
+    machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
+    machine.flags.carry = result_sign and !dst_sign; // check this some more
+    machine.flags.auxiliary_carry = false; // TODO
+    if (src_sign) {
+        machine.flags.overflow = dst_sign and !result_sign;
+    } else {
+        machine.flags.overflow = !dst_sign and result_sign;
     }
 
     try printFlagChange(prev_flags, machine.flags);
@@ -320,6 +367,7 @@ fn simInstruction(instruction: Instruction) !void {
         .mov => try simMov(instruction),
         .sub => try simSub(instruction),
         .add => try simAdd(instruction),
+        .cmp => try simCmp(instruction),
         else => return error.UnsupportedInstruction,
     }
     try machine.logger().writeAll("\n");
