@@ -269,8 +269,8 @@ fn simSub(instruction: Instruction) !void {
     machine.flags.zero = result == 0;
     machine.flags.sign = result_sign;
     machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
-    machine.flags.carry = result_sign and !dst_sign; // check this some more
-    machine.flags.auxiliary_carry = false; // TODO
+    machine.flags.carry = result_sign and !dst_sign;
+    machine.flags.auxiliary_carry = (dst_val & 0x8) == 0 and (result & 0x8) != 0;
     if (src_sign) {
         machine.flags.overflow = !dst_sign and result_sign;
     } else {
@@ -308,8 +308,8 @@ fn simCmp(instruction: Instruction) !void {
     machine.flags.zero = result == 0;
     machine.flags.sign = result_sign;
     machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
-    machine.flags.carry = result_sign and !dst_sign; // check this some more
-    machine.flags.auxiliary_carry = false; // TODO
+    machine.flags.carry = result_sign and !dst_sign;
+    machine.flags.auxiliary_carry = (dst_val & 0x8) == 0 and (result & 0x8) != 0;
     if (src_sign) {
         machine.flags.overflow = !dst_sign and result_sign;
     } else {
@@ -350,8 +350,8 @@ fn simAdd(instruction: Instruction) !void {
     machine.flags.zero = result == 0;
     machine.flags.sign = result_sign;
     machine.flags.parity = (@popCount(result & 0xff) % 2) == 0;
-    machine.flags.carry = result_sign and !dst_sign; // check this some more
-    machine.flags.auxiliary_carry = false; // TODO
+    machine.flags.carry = result_sign and !dst_sign;
+    machine.flags.auxiliary_carry = (dst_val & 0x8) != 0 and (result & 0x8) == 0;
     if (src_sign) {
         machine.flags.overflow = dst_sign and !result_sign;
     } else {
@@ -577,6 +577,9 @@ test "sub_simulate" {
             0x0000, // bp
             0x0000, // si
             0x0000, // di
+        },
+        .flags = .{
+            .overflow = true,
         },
         .logbuf = undefined,
     };
