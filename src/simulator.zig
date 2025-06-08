@@ -80,6 +80,34 @@ const Machine = struct {
             .di => .{ .word = &m.*.registers[7] },
         };
     }
+
+    fn logState(m: *Machine) void {
+        const writer = m.logger();
+
+        writer.writeAll("===== 8086 memdump =====\n") catch {};
+
+        writer.writeAll("-- Registers --\n") catch {};
+        dumpRegister(writer, .ax) catch {};
+        dumpRegister(writer, .bx) catch {};
+        dumpRegister(writer, .cx) catch {};
+        dumpRegister(writer, .dx) catch {};
+        dumpRegister(writer, .sp) catch {};
+        dumpRegister(writer, .bp) catch {};
+        dumpRegister(writer, .si) catch {};
+        dumpRegister(writer, .di) catch {};
+
+        writer.writeAll("-- Flags --\n") catch {};
+        printFlags(machine.flags) catch {};
+        writer.writeAll("\n") catch {};
+
+        writer.writeAll("-- Segment Registers --\n") catch {};
+        dumpSegmentRegister(writer, .es) catch {};
+        dumpSegmentRegister(writer, .cs) catch {};
+        dumpSegmentRegister(writer, .ss) catch {};
+        dumpSegmentRegister(writer, .ds) catch {};
+
+        writer.writeAll("========================\n") catch {};
+    }
 };
 
 var machine: Machine = .{};
@@ -149,44 +177,44 @@ fn printChange(op: decode.InstructionOperand, before: u16, after: u16) !void {
     }
 
     switch (width) {
-        .byte => try std.fmt.format(machine.logger(), "{s}:{x:0>2}->{x:0>2}", .{
+        .byte => try std.fmt.format(machine.logger(), "{s}:0x{x:0>2}->0x{x:0>2}", .{
             name,
             @as(u8, @truncate(before)),
             @as(u8, @truncate(after)),
         }),
-        .word => try std.fmt.format(machine.logger(), "{s}:{x:0>4}->{x:0>4}", .{
+        .word => try std.fmt.format(machine.logger(), "{s}:0x{x:0>4}->0x{x:0>4}", .{
             name, before, after,
         }),
     }
 }
 
 fn printFlags(flags: Machine.Flags) !void {
-    if (flags.trap) {
-        try machine.logger().writeAll("T");
-    }
-    if (flags.direction) {
-        try machine.logger().writeAll("D");
-    }
-    if (flags.interrupt_enable) {
-        try machine.logger().writeAll("I");
-    }
-    if (flags.overflow) {
-        try machine.logger().writeAll("O");
-    }
-    if (flags.sign) {
-        try machine.logger().writeAll("S");
-    }
-    if (flags.zero) {
-        try machine.logger().writeAll("Z");
-    }
-    if (flags.auxiliary_carry) {
-        try machine.logger().writeAll("A");
+    if (flags.carry) {
+        try machine.logger().writeAll("C");
     }
     if (flags.parity) {
         try machine.logger().writeAll("P");
     }
-    if (flags.carry) {
-        try machine.logger().writeAll("C");
+    if (flags.auxiliary_carry) {
+        try machine.logger().writeAll("A");
+    }
+    if (flags.zero) {
+        try machine.logger().writeAll("Z");
+    }
+    if (flags.sign) {
+        try machine.logger().writeAll("S");
+    }
+    if (flags.overflow) {
+        try machine.logger().writeAll("O");
+    }
+    if (flags.interrupt_enable) {
+        try machine.logger().writeAll("I");
+    }
+    if (flags.direction) {
+        try machine.logger().writeAll("D");
+    }
+    if (flags.trap) {
+        try machine.logger().writeAll("T");
     }
 }
 
@@ -217,7 +245,7 @@ fn processSub(instruction: Instruction) !void {
     const result = @as(u32, dst_val) -% src;
 
     try machine.logger().writeAll(" ; ");
-    try printChange(instruction.dst, dst.value(), src);
+    try printChange(instruction.dst, dst.value(), @truncate(result));
 
     const prev_flags = machine.flags;
 
@@ -245,6 +273,8 @@ fn processSub(instruction: Instruction) !void {
     }
 
     try printFlagChange(prev_flags, machine.flags);
+
+    try printFlagChange(prev_flags, machine.flags);
 }
 
 fn processAdd(instruction: Instruction) !void {
@@ -252,6 +282,11 @@ fn processAdd(instruction: Instruction) !void {
     const dst_val = dst.value();
     const src = valueFromOperand(instruction.src);
     const result = @as(u32, dst_val) +% src;
+
+    try machine.logger().writeAll(" ; ");
+    try printChange(instruction.dst, dst.value(), @truncate(result));
+
+    const prev_flags = machine.flags;
 
     switch (dst) {
         .byte => |ptr| {
@@ -275,6 +310,8 @@ fn processAdd(instruction: Instruction) !void {
             machine.flags.overflow = (result > 0xffff);
         },
     }
+
+    try printFlagChange(prev_flags, machine.flags);
 }
 
 fn processInstruction(instruction: Instruction) !void {
@@ -300,32 +337,6 @@ fn dumpSegmentRegister(writer: anytype, register: SegmentRegister) !void {
         @tagName(register),
         machine.segment_registers[@intFromEnum(register)],
     });
-}
-
-fn dumpMemory(writer: anytype) !void {
-    try writer.writeAll("===== 8086 memdump =====\n");
-
-    try writer.writeAll("-- Registers --\n");
-    try dumpRegister(writer, .ax);
-    try dumpRegister(writer, .bx);
-    try dumpRegister(writer, .cx);
-    try dumpRegister(writer, .dx);
-    try dumpRegister(writer, .sp);
-    try dumpRegister(writer, .bp);
-    try dumpRegister(writer, .si);
-    try dumpRegister(writer, .di);
-
-    try writer.writeAll("-- Flags --\n");
-    try printFlags(machine.flags);
-    try writer.writeAll("\n");
-
-    try writer.writeAll("-- Segment Registers --\n");
-    try dumpSegmentRegister(writer, .es);
-    try dumpSegmentRegister(writer, .cs);
-    try dumpSegmentRegister(writer, .ss);
-    try dumpSegmentRegister(writer, .ds);
-
-    try writer.writeAll("========================\n");
 }
 
 fn runProgram(program_reader: anytype) !void {
@@ -377,7 +388,10 @@ fn testFromFile(path: []const u8, expect: Machine) !void {
     };
     defer program_file.close();
 
-    errdefer std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
+    errdefer {
+        machine.logState();
+        std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
+    }
     try runProgram(program_file.reader());
     try expectMachine(expect);
 }
@@ -385,6 +399,7 @@ fn testFromFile(path: []const u8, expect: Machine) !void {
 fn expectMachine(expect: Machine) !void {
     try std.testing.expectEqualSlices(u16, &expect.registers, &machine.registers);
     try std.testing.expectEqualSlices(u16, &expect.segment_registers, &machine.segment_registers);
+    try std.testing.expectEqualDeep(expect.flags, machine.flags);
 }
 
 test "listing_0044_simulate" {
@@ -468,7 +483,7 @@ test "listing_0047_simulate" {
         },
         .logbuf = undefined,
     };
-    try testFromFile("course_material/perfaware/part1/listing_0047_challenge_register_movs", expect);
+    try testFromFile("course_material/perfaware/part1/listing_0047_challenge_flags", expect);
 }
 
 test "sub_simulate" {
@@ -577,5 +592,5 @@ test "add_simulate" {
 
 pub fn main() !void {
     try runProgram(std.io.getStdIn().reader());
-    try dumpMemory(machine.logger());
+    machine.logState();
 }
