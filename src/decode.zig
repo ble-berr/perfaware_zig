@@ -33,7 +33,9 @@ pub const Register = enum(u4) {
     }
 };
 
-pub const EacBase = enum {
+// NOTE(benjamin): Ordered according to their respective values within a mod
+// byte, allowing for direct conversion via @enumFromInt.
+const EacBase = enum(u3) {
     @"bx + si",
     @"bx + di",
     @"bp + si",
