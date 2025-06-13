@@ -167,10 +167,14 @@ fn printChange(op: decode.InstructionOperand, before: u16, after: u16) !void {
             .ax, .cx, .dx, .bx, .sp, .bp, .si, .di => |r| {
                 name = @tagName(r);
                 width = .word;
-            }
+            },
         },
         .segment => |sr| {
             name = @tagName(sr);
+            width = .word;
+        },
+        .short_jump, .near_jump => {
+            name = "ip";
             width = .word;
         },
         else => unreachable, // TODO
@@ -361,6 +365,17 @@ fn simAdd(instruction: Instruction) !void {
     try printFlagChange(prev_flags, machine.flags);
 }
 
+fn simJump(instruction: Instruction) void {
+    machine.logger().writeAll(" ; ") catch unreachable;
+    const before = machine.instruction_pointer;
+    switch (instruction.dst) {
+        .short_jump => |val| machine.instruction_pointer +%= @bitCast(@as(i16, val)),
+        .near_jump, .far_jump => unreachable, // Not implemented
+        else => unreachable,
+    }
+    printChange(instruction.dst, before, machine.instruction_pointer) catch unreachable;
+}
+
 fn simInstruction(instruction: Instruction) !void {
     try printInstruction(machine.logger(), instruction, machine.instruction_pointer);
     switch (instruction.type) {
@@ -368,6 +383,7 @@ fn simInstruction(instruction: Instruction) !void {
         .sub => try simSub(instruction),
         .add => try simAdd(instruction),
         .cmp => try simCmp(instruction),
+        .jne => simJne(instruction),
         else => return error.UnsupportedInstruction,
     }
     try machine.logger().writeAll("\n");
@@ -448,6 +464,9 @@ fn expectMachine(expect: Machine) !void {
     try std.testing.expectEqualSlices(u16, &expect.registers, &machine.registers);
     try std.testing.expectEqualSlices(u16, &expect.segment_registers, &machine.segment_registers);
     try std.testing.expectEqualDeep(expect.flags, machine.flags);
+    if (expect.instruction_pointer != 0) {
+        try std.testing.expectEqual(expect.instruction_pointer, machine.instruction_pointer);
+    }
 }
 
 test "listing_0044_simulate" {
@@ -639,6 +658,50 @@ test "add_simulate" {
         std.io.getStdErr().writeAll(machine.logbuf.items) catch {};
         return err;
     };
+}
+
+test "listing_0048_simulate" {
+    const expect: Machine = .{
+        .registers = .{
+            0x0000, // ax
+            0xfce0, // cx
+            0x0000, // dx
+            0x07d0, // bx
+            0x0000, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .flags = .{
+            .carry = true,
+            .sign = true,
+        },
+        .instruction_pointer = 0x000e,
+        .logbuf = undefined,
+    };
+    try testFromFile("course_material/perfaware/part1/listing_0048_ip_register", expect);
+}
+
+test "listing_0049_simulate" {
+    const expect: Machine = .{
+        .registers = .{
+            0x0000, // ax
+            0x0000, // cx
+            0x0000, // dx
+            0x0406, // bx
+            0x0000, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .flags = .{
+            .parity = true,
+            .zero = true,
+        },
+        .instruction_pointer = 0x000e,
+        .logbuf = undefined,
+    };
+    try testFromFile("course_material/perfaware/part1/listing_0049_conditional_jumps", expect);
 }
 
 pub fn main() !void {
