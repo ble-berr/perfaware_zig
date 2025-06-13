@@ -370,6 +370,43 @@ fn simJump(instruction: Instruction) void {
     printChange(instruction.dst, before, machine.instruction_pointer) catch unreachable;
 }
 
+fn simJne(instruction: Instruction) void {
+    if (!machine.flags.zero) {
+        simJump(instruction);
+    }
+}
+
+fn simJe(instruction: Instruction) void {
+    if (machine.flags.zero) {
+        simJump(instruction);
+    }
+}
+
+fn simJp(instruction: Instruction) void {
+    if (machine.flags.parity) {
+        simJump(instruction);
+    }
+}
+
+fn simJb(instruction: Instruction) void {
+    if (machine.flags.sign) {
+        simJump(instruction);
+    }
+}
+
+fn simLoopne(instruction: Instruction) void {
+    const cx = switch (machine.ptrFromRegister(.cx)) {
+        .byte => unreachable,
+        .word => |ptr| ptr,
+    };
+
+    cx.* -%= 1;
+    if (cx.* != 0) {
+        simJump(instruction);
+    }
+    printChange(.{ .register = .cx }, cx.* + 1, cx.*) catch unreachable;
+}
+
 fn simInstruction(instruction: Instruction) !void {
     try printInstruction(machine.logger(), instruction, machine.instruction_pointer);
     try machine.logger().writeAll(" ; ");
@@ -379,6 +416,10 @@ fn simInstruction(instruction: Instruction) !void {
         .add => try simAdd(instruction),
         .cmp => try simCmp(instruction),
         .jne => simJne(instruction),
+        .je => simJe(instruction),
+        .jp => simJp(instruction),
+        .jb => simJb(instruction),
+        .loopne => simLoopne(instruction),
         else => return error.UnsupportedInstruction,
     }
     try machine.logger().writeAll("\n");
@@ -697,6 +738,29 @@ test "listing_0049_simulate" {
         .logbuf = undefined,
     };
     try testFromFile("course_material/perfaware/part1/listing_0049_conditional_jumps", expect);
+}
+
+test "listing_0050_simulate" {
+    const expect: Machine = .{
+        .registers = .{
+            0x000d, // ax
+            0x0000, // cx
+            0x0000, // dx
+            0xfffb, // bx
+            0x0000, // sp
+            0x0000, // bp
+            0x0000, // si
+            0x0000, // di
+        },
+        .flags = .{
+            .auxiliary_carry = true,
+            .carry = true,
+            .sign = true,
+        },
+        .instruction_pointer = 0x001c,
+        .logbuf = undefined,
+    };
+    try testFromFile("course_material/perfaware/part1/listing_0050_challenge_jumps", expect);
 }
 
 pub fn main() !void {
