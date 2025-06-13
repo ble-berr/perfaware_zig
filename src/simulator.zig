@@ -233,7 +233,6 @@ fn simMov(instruction: Instruction) !void {
     const dst = ptrFromOperand(instruction.dst);
     const src = valueFromOperand(instruction.src);
 
-    try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), src);
 
     switch (dst) {
@@ -248,7 +247,6 @@ fn simSub(instruction: Instruction) !void {
     const src = valueFromOperand(instruction.src);
     var result = dst_val -% src;
 
-    try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), @truncate(result));
 
     const prev_flags = machine.flags;
@@ -290,8 +288,6 @@ fn simCmp(instruction: Instruction) !void {
     const src = valueFromOperand(instruction.src);
     var result = dst_val -% src;
 
-    try machine.logger().writeAll(" ; ");
-
     const prev_flags = machine.flags;
 
     var neg_limit: u16 = undefined;
@@ -329,7 +325,6 @@ fn simAdd(instruction: Instruction) !void {
     const src = valueFromOperand(instruction.src);
     var result = dst_val +% src;
 
-    try machine.logger().writeAll(" ; ");
     try printChange(instruction.dst, dst.value(), @truncate(result));
 
     const prev_flags = machine.flags;
@@ -366,7 +361,6 @@ fn simAdd(instruction: Instruction) !void {
 }
 
 fn simJump(instruction: Instruction) void {
-    machine.logger().writeAll(" ; ") catch unreachable;
     const before = machine.instruction_pointer;
     switch (instruction.dst) {
         .short_jump => |val| machine.instruction_pointer +%= @bitCast(@as(i16, val)),
@@ -378,6 +372,7 @@ fn simJump(instruction: Instruction) void {
 
 fn simInstruction(instruction: Instruction) !void {
     try printInstruction(machine.logger(), instruction, machine.instruction_pointer);
+    try machine.logger().writeAll(" ; ");
     switch (instruction.type) {
         .mov => try simMov(instruction),
         .sub => try simSub(instruction),
